@@ -2,6 +2,17 @@
 > **"Network gayab, fir bhi help alive."**  
 > Offline-First Women's Safety & Peer-to-Peer Distress Broadcast System over Bluetooth Low Energy (BLE) with Decoy Mode & 2-Way Responder ACK.
 
+[![Live Demo Web App](https://img.shields.io/badge/Live%20Demo-Vercel%20App-ff2d78?style=for-the-badge&logo=vercel&logoColor=white)](https://hackinverse-women-safety.vercel.app/)
+[![Download Android APK](https://img.shields.io/badge/Download-Android%20APK%20(18.4MB)-e91e63?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Hasnainyt/hackinverse-women-safety/raw/main/app-debug.apk)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Hasnainyt/hackinverse-women-safety)
+
+---
+
+## 🌐 Live Web Portal & Simulator
+
+👉 **[Launch Nari-Suraksha Live Web Hub (Vercel)](https://hackinverse-women-safety.vercel.app/)**  
+*(Experience the interactive 2-Phone BLE mesh simulation, Decoy Calculator PIN trigger, and offline architecture directly in your browser)*
+
 ---
 
 ## 📥 Direct APK Download & Quick Install (Method 1)
