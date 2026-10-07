@@ -16,7 +16,8 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 class HistoryViewModel(
-    private val sosDao: SosDao
+    private val sosDao: SosDao,
+    private val audioDir: File? = null
 ) : ViewModel() {
 
     val events: StateFlow<List<SosEventEntity>> = sosDao.getAllEvents()
@@ -85,7 +86,25 @@ class HistoryViewModel(
     fun clearAllHistory() {
         viewModelScope.launch {
             stopAudio()
+            // Delete all audio evidence files from disk
+            events.value.forEach { event ->
+                event.audioPath?.let { path ->
+                    try {
+                        File(path).delete()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to delete audio file: $path", e)
+                    }
+                }
+            }
+            try {
+                audioDir?.listFiles()?.forEach { file ->
+                    file.delete()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to clear audio directory", e)
+            }
             sosDao.clearAll()
+            Log.i(TAG, "All incident records and audio evidence purged from device")
         }
     }
 
@@ -97,10 +116,10 @@ class HistoryViewModel(
     companion object {
         private const val TAG = "HistoryViewModel"
 
-        fun provideFactory(sosDao: SosDao): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+        fun provideFactory(sosDao: SosDao, audioDir: File? = null): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return HistoryViewModel(sosDao) as T
+                return HistoryViewModel(sosDao, audioDir) as T
             }
         }
     }

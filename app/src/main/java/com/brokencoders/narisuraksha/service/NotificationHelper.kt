@@ -36,7 +36,7 @@ class NotificationHelper(private val context: Context) {
                 Constants.CHANNEL_ALERT_NAME,
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Emergency SOS alerts from nearby people in distress"
+                description = "Emergency SOS alerts from nearby people"
                 enableLights(true)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 500, 200, 500, 200, 1000)
@@ -50,13 +50,13 @@ class NotificationHelper(private val context: Context) {
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
 
-            // Low priority foreground service channel
+            // Low priority discreet foreground service channel
             val serviceChannel = NotificationChannel(
                 Constants.CHANNEL_SERVICE_ID,
                 Constants.CHANNEL_SERVICE_NAME,
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Background guardian listening for nearby offline distress signals"
+                description = "Background process"
                 enableLights(false)
                 enableVibration(false)
                 setShowBadge(false)
@@ -78,13 +78,14 @@ class NotificationHelper(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // Discreet neutral notification title & icon to protect user in Decoy Mode
         return NotificationCompat.Builder(context, Constants.CHANNEL_SERVICE_ID)
-            .setContentTitle("Nari Suraksha Active Guardian")
-            .setContentText("Listening offline for nearby BLE distress signals")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Calculator Service")
+            .setContentText("Background memory helper active")
+            .setSmallIcon(R.drawable.ic_calculator_launcher)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
@@ -101,9 +102,9 @@ class NotificationHelper(private val context: Context) {
         )
 
         return NotificationCompat.Builder(context, Constants.CHANNEL_ALERT_ID)
-            .setContentTitle("EMERGENCY SOS ACTIVE")
-            .setContentText("Broadcasting distress signal to nearby phones offline")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("EMERGENCY BEACON TRANSMITTING")
+            .setContentText("Broadcasting distress packet peer-to-peer over BLE")
+            .setSmallIcon(R.drawable.ic_calculator_launcher)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_MAX)
@@ -133,9 +134,9 @@ class NotificationHelper(private val context: Context) {
         )
 
         val locationText = if (!receivedSos.packet.isLocationUnavailable && (receivedSos.packet.lat != 0f || receivedSos.packet.lon != 0f)) {
-            "Coords: ${String.format("%.4f", receivedSos.packet.lat)}, ${String.format("%.4f", receivedSos.packet.lon)}"
+            "GPS: ${String.format("%.4f", receivedSos.packet.lat)}, ${String.format("%.4f", receivedSos.packet.lon)}"
         } else {
-            "Location: Offline GPS unavailable"
+            "Location: GPS unavailable (track via BLE RSSI)"
         }
 
         val notification = NotificationCompat.Builder(context, Constants.CHANNEL_ALERT_ID)
@@ -143,9 +144,9 @@ class NotificationHelper(private val context: Context) {
             .setContentText("Distress beacon detected! $locationText")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("🚨 DISTRESS SIGNAL DETECTED NEARBY!\n\nDistance: ${distanceBucket.label} (${distanceBucket.approxDistanceText}, RSSI: ${receivedSos.rssi} dBm)\n$locationText\n\nTap immediately to assist or view navigation directions.")
+                    .bigText("🚨 DISTRESS BEACON DETECTED NEARBY!\n\nDistance: ${distanceBucket.label} (${distanceBucket.approxDistanceText}, RSSI: ${receivedSos.rssi} dBm)\n$locationText\n\nTap immediately to view coordinates or send acknowledgment.")
             )
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_calculator_launcher)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)
@@ -159,7 +160,7 @@ class NotificationHelper(private val context: Context) {
         try {
             NotificationManagerCompat.from(context).notify(notificationId, notification)
         } catch (e: SecurityException) {
-            // notification permission check fallback
+            // notification permission fallback
         }
     }
 }

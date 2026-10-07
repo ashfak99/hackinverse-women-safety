@@ -71,21 +71,26 @@ export default function SafeZonesExplorer() {
         </div>
 
         {/* Emergency Dial Chips */}
-        <div className="flex items-center gap-2">
-          <a
-            href="tel:112"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition-all"
-          >
-            <Phone className="w-3.5 h-3.5" />
-            <span>112 All Emergency</span>
-          </a>
-          <a
-            href="tel:1091"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E91E63] hover:bg-[#C2185B] text-white text-xs font-bold shadow-sm transition-all"
-          >
-            <Phone className="w-3.5 h-3.5" />
-            <span>1091 Women Help</span>
-          </a>
+        <div className="flex flex-col sm:items-end gap-1">
+          <div className="flex items-center gap-2">
+            <a
+              href="tel:112"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition-all"
+            >
+              <Phone className="w-3.5 h-3.5" />
+              <span>112 All Emergency</span>
+            </a>
+            <a
+              href="tel:1091"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E91E63] hover:bg-[#C2185B] text-white text-xs font-bold shadow-sm transition-all"
+            >
+              <Phone className="w-3.5 h-3.5" />
+              <span>1091 Women Help</span>
+            </a>
+          </div>
+          <span className="text-[10px] text-gray-500 font-medium">
+            *Emergency voice calls require active cellular carrier signal
+          </span>
         </div>
       </div>
 

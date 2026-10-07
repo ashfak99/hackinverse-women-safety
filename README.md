@@ -30,32 +30,34 @@ You can download and install the ready-to-run Android APK directly onto your pho
 ---
 
 ## 🌟 Overview
-**Nari-Suraksha** is a mission-critical Android safety application built for emergencies where **cellular networks, internet connectivity, or cloud servers are unavailable, jammed, or disabled**. 
+**Nari-Suraksha** is an offline-first Android safety application designed for situations where **cellular networks, internet connectivity, or cloud servers are unavailable or disabled**. 
 
-Using autonomous peer-to-peer **Bluetooth Low Energy (BLE) broadcasting**, an SOS signal is transmitted directly to all nearby smartphones running the app without relying on telecom infrastructure, SIM cards, or Wi-Fi.
+Using autonomous peer-to-peer **Bluetooth Low Energy (BLE) broadcasting**, an emergency signal is transmitted directly to nearby smartphones running the app without relying on telecom towers, SIM data, or Wi-Fi.
 
 ---
 
 ## 🚀 Key Features
 
-- 📴 **100% Offline BLE Distress Broadcast**: Custom 128-bit Service UUID broadcasting a compact 15-byte binary packet payload (`senderId`, `timestamp`, `lat`, `lon`, `flags`).
+- 📴 **Works Without Cellular or Internet**: Autonomous BLE advertisement using compact 16-bit Service UUID data structures fitting within the standard legacy 31-byte BLE packet (15-byte payload: `senderId`, `timestamp`, `lat`, `lon`, `flags`).
 - ⚡ **Multi-Trigger SOS**:
   - **1-Tap Pulsating Hero SOS Button** with tactile ring feedback.
   - **3-Shake Accelerometer Sensor**: Detects 3 rapid shakes (> 2.7g) within 2 seconds with a 3-second cooldown to prevent false alarms.
-  - **5-Second Cancel Window**: Countdown circle with audio/vibration cues to allow cancellation before broadcast.
-- 🧮 **Decoy Mode (Calculator Disguise) & Custom PIN**:
-  - Fully functional arithmetic calculator (`+`, `-`, `×`, `÷`, `%`).
-  - Entering a secret PIN (default `1234` or custom-configured) followed by `=` covertly triggers SOS.
-  - Long-pressing `=` unlocks the full safety application.
-  - **In-App Safety Settings**: Change the 4-digit secret PIN at any time.
+  - **5-Second Cancel Window**: Countdown overlay with audio/vibration cues to cancel accidental triggers.
+- 🧮 **Decoy Mode (Calculator Disguise) & Anti-Forensics**:
+  - Fully functional arithmetic calculator (`+`, `-`, `×`, `÷`, `%`) named **"Calculator"** with a neutral calculator icon.
+  - **Forced Custom PIN Onboarding**: Users set their own secret 4-digit PIN during onboarding (no default 1234).
+  - Entering the secret PIN followed by `=` covertly triggers the SOS broadcast.
+  - Long-pressing `=` unlocks the full guardian interface.
+  - **FLAG_SECURE Protection**: Prevents app screenshots and blanks out Android Recents thumbnail previews when in real emergency screens.
+  - **Evidence & Log Wipe**: One-tap action to purge all incident history and audio recordings from the device.
 - 👥 **2-Way Responder Acknowledgment (ACK) & Live Counter**:
-  - Responders can tap **"I AM RESPONDING (SEND ACK)"** to transmit a BLE confirmation beacon back to the victim.
-  - The victim's device displays a live counter: *"👥 N Nearby Responder(s) Alerted! Help acknowledged your beacon and is heading your way."*
-- 🎙️ **Offline Audio Evidence Capture**: Automatically records microphone evidence to secure app-private storage upon SOS confirmation.
-- 📍 **Offline GPS Location & Proximity Tracking**: Captures GPS coordinates with offline fallback, offering one-tap navigation and proximity estimation via RSSI (`Near < 3m`, `Medium 3–8m`, `Far > 10m`).
-- 🚨 **Responder Assistance Tools**: Built-in loud deterrent siren and flashlight strobe to locate victims in the dark.
-- 🏥 **Offline Safe Zones Directory**: Pre-cached directory of 24x7 Women Help Desks, Police Stations, Metro Security Posts, and Trauma Centers with direct emergency dialers (112, 1091).
-- 🛡️ **Always-On Background Guardian**: Persistent foreground service that keeps scanning for distress beacons even when the screen is locked.
+  - Responders can tap **"I AM RESPONDING (SEND ACK)"** to transmit a BLE confirmation beacon back to the sender.
+  - The sender's screen updates in real time: *"A nearby person has acknowledged your alert."*
+- 🎙️ **Local Audio Evidence Recording**: Automatically records microphone audio to app-private storage upon SOS confirmation.
+- 📍 **Offline GPS Location & Proximity Estimation**: Captures GPS coordinates with offline fallback, offering one-tap map navigation and RSSI distance estimation (`Near < 3m`, `Medium 3–10m`, `Far > 10m` — labeled approximate due to RF noise).
+- 🚨 **Built-in Deterrent Siren & Flashlight**: High-decibel alarm siren and strobe torch to deter attackers or help responders locate the victim in darkness.
+- 🏥 **Offline Safe Zones Directory**: Pre-cached directory of 24x7 Women Help Desks, Police Stations, and Hospitals with emergency dialers (112, 1091 — *Note: voice calls require active cellular connection*).
+- 🛡️ **Always-On Background Guardian**: Persistent background service ("Calculator Service") with low-visibility notifications that continues listening for distress beacons even when the screen is locked.
 
 ---
 
@@ -235,20 +237,51 @@ com.brokencoders.narisuraksha
 
 ---
 
-## 🔧 Troubleshooting
+---
 
-| Issue | Solution |
-|---|---|
-| **Gradle JDK Version Mismatch** | Ensure your Gradle JDK is set to **JDK 17** in Android Studio (`Settings -> Build, Execution, Deployment -> Build Tools -> Gradle -> Gradle JDK`). |
-| **Bluetooth Scan not receiving packets** | Ensure **Location** and **Nearby Devices (Bluetooth)** permissions are granted in the Onboarding screen. Make sure Bluetooth is toggled **ON**. |
-| **Background scanning killed on Xiaomi/Samsung/Oppo** | Tap **"Disable Battery Optimization"** in the Onboarding screen and select *Unrestricted / No Restrictions*. |
-| **Audio recording location** | Grant the `RECORD_AUDIO` permission during onboarding. Audio files are saved privately in `Android/data/com.brokencoders.narisuraksha/files/sos_recordings/`. |
+## 🔒 Security Model & Known Limitations
+
+| Aspect | Current Implementation (v1 MVP) | Roadmap / Future Work |
+|---|---|---|
+| **Packet Authentication** | Open binary broadcast without digital signatures for instant zero-handshake transmission. | Elliptic Curve (ECDSA) digital signatures with public-key exchange. |
+| **Packet Privacy** | Raw anonymous payload without user identifying names or phone numbers. | Ephemeral Diffie-Hellman payload encryption for trusted contact rings. |
+| **Spoofing & Spam Mitigation** | Per-sender rate limiting (10-second spam rejection window per sender ID). | Cryptographic proof-of-work or challenge-response verification. |
+| **Relay Topology** | Single-hop direct broadcast + direct 2-way ACK. | Multi-hop mesh store-and-forward relay across intermediary nodes. |
+| **Anti-Forensics** | Disguised launcher, neutral notifications, `FLAG_SECURE` window, and storage purge. | Secure biometric enclave key destruction and encrypted database. |
+
+---
+
+## 📡 BLE Advertisement Packet Specification (Legacy 31-Byte Structure)
+
+To ensure universal compatibility across Android chipsets (Samsung, Xiaomi, Vivo/Oppo, Pixel, OnePlus), Nari-Suraksha packages all distress telemetry strictly within the legacy 31-byte Bluetooth advertising packet:
+
+```
+[ AD Record 1: 16-bit Service UUID ] (4 Bytes)
+  ├── Length: 0x03 (3 bytes)
+  ├── AD Type: 0x03 (16-bit Complete Service UUID List)
+  └── Service UUID: 0xFDE1 (2 bytes)
+
+[ AD Record 2: 16-bit Service Data ] (19 Bytes)
+  ├── Length: 0x12 (18 bytes)
+  ├── AD Type: 0x16 (Service Data - 16-bit UUID)
+  ├── UUID: 0xFDE1 (2 bytes)
+  └── SOS Payload: 15 Bytes
+        ├── Magic Byte: 0x53 ('S') (1 byte)
+        ├── Version: 0x01 (1 byte)
+        ├── Sender ID: Short (2 bytes)
+        ├── Timestamp: Int (4 bytes)
+        ├── Latitude: Float (4 bytes)
+        ├── Longitude: Float (4 bytes)
+        └── Flags: Bit 0 = ACK, Bit 1 = Audio Recorded (1 byte)
+
+Total AD Payload: 23 Bytes <= 31 Bytes (Safe on all chipsets)
+```
 
 ---
 
 ## 👥 Team Broken Coders (Hackinverse 1.0)
 - **Workstream A (Trigger & Capture):** Shake sensor, Countdown, Audio evidence, GPS fallback.
-- **Workstream B (BLE Engine):** Packet codec, BLE advertiser & scanner, foreground services.
+- **Workstream B (BLE Engine):** Packet codec, 16-bit BLE advertiser & scanner, foreground services.
 - **Workstream C (UI & Navigation):** Compose theme, Home, Alert, Safe zones, History, Settings.
 - **Workstream D (Decoy & Storage):** Calculator disguise, Room DB, Permission onboarding, DataStore PIN.
 

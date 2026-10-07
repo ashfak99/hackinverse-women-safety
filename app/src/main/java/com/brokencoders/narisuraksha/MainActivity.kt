@@ -2,15 +2,18 @@ package com.brokencoders.narisuraksha
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.brokencoders.narisuraksha.decoy.DecoyViewModel
 import com.brokencoders.narisuraksha.ui.navigation.NariSurakshaNavGraph
@@ -35,7 +38,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private val historyViewModel: HistoryViewModel by viewModels {
-        HistoryViewModel.provideFactory(app.database.sosDao())
+        HistoryViewModel.provideFactory(
+            sosDao = app.database.sosDao(),
+            audioDir = java.io.File(applicationContext.filesDir, "sos_recordings")
+        )
     }
 
     private val decoyViewModel: DecoyViewModel by viewModels {
@@ -55,9 +61,22 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController = rememberNavController()
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentRoute = navBackStackEntry?.destination?.route
 
                     val isOnboardingCompleted by mainViewModel.isOnboardingCompleted.collectAsState()
                     val isDecoyEnabled by mainViewModel.isDecoyEnabled.collectAsState()
+
+                    // Recents Anti-Forensics Protection (FLAG_SECURE):
+                    // Blanks out the app preview thumbnail in Android Recents screen
+                    // whenever inside real emergency screens (Home, Alert, History, SafeZones)
+                    LaunchedEffect(currentRoute) {
+                        if (currentRoute == Screen.Decoy.route) {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        } else {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                    }
 
                     // Determine start destination
                     val startDestination = when {

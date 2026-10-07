@@ -172,15 +172,26 @@ fun SafeZoneScreen(onBack: () -> Unit) {
                 .padding(paddingValues)
         ) {
             // Emergency Helplines quick bar
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF181818))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                EmergencyDialChip("112 All Emergency", "112", context)
-                EmergencyDialChip("1091 Women Helpline", "1091", context)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    EmergencyDialChip("112 All Emergency", "112", context)
+                    EmergencyDialChip("1091 Women Helpline", "1091", context)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "*Note: Emergency voice calls require active cellular carrier signal.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextMuted,
+                    fontSize = 11.sp
+                )
             }
 
             // Category Filter Chips

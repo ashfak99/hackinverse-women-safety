@@ -37,7 +37,7 @@ export default function InteractiveSimulator() {
             lat: 28.6139,
             lon: 77.2090,
             rssi: -58,
-            distanceText: '< 3 meters away (Immediate Proximity)',
+            distanceText: 'Approx. < 3 meters away (Immediate Proximity)',
             category: 'VERY CLOSE'
           })
         }, 1200)
@@ -290,7 +290,7 @@ export default function InteractiveSimulator() {
                         </p>
                         <p className="text-[11px] opacity-80">
                           {responderCount > 0
-                            ? 'Help acknowledged your beacon and is heading your way.'
+                            ? 'A nearby person has acknowledged your alert.'
                             : 'Signal transmitting offline across nearby BLE radius.'}
                         </p>
                       </div>

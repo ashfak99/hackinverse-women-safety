@@ -305,7 +305,7 @@ fun HomeScreen(
                                     color = Color.White
                                 )
                                 Text(
-                                    text = if (responderAckCount > 0) "Help acknowledged your beacon and is heading your way." else "Distress packet transmitting peer-to-peer via BLE.",
+                                    text = if (responderAckCount > 0) "A nearby person has acknowledged your alert." else "Distress packet transmitting peer-to-peer via BLE.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color.White.copy(alpha = 0.8f)
                                 )

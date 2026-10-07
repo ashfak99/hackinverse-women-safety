@@ -16,7 +16,7 @@ export default function OfflineArchitecture() {
     {
       num: '03',
       title: '15-Byte BLE Packetizer',
-      desc: 'Encodes senderId (2B), timestamp (4B), lat (4B), lon (4B), and flags (1B) into a compact binary payload under custom 128-bit UUID.'
+      desc: 'Encodes senderId (2B), timestamp (4B), lat (4B), lon (4B), and flags (1B) into a 23-byte AD frame under 16-bit Service UUID (0xFDE1).'
     },
     {
       num: '04',
@@ -78,7 +78,7 @@ export default function OfflineArchitecture() {
             </h5>
           </div>
           <span className="text-[10px] font-mono bg-pink-500/20 text-pink-300 px-2 py-0.5 rounded border border-pink-500/30">
-            UUID: fa87c0d0-afac-11de-8a39-0800200c9a66
+            16-bit UUID: 0xFDE1 (23B AD Frame)
           </span>
         </div>
 

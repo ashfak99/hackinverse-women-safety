@@ -8,7 +8,6 @@ import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
-import android.os.ParcelUuid
 import android.util.Log
 import com.brokencoders.narisuraksha.core.Constants
 import com.brokencoders.narisuraksha.core.PermissionHelper
@@ -21,7 +20,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Broadcasts anonymous SOS packets over Bluetooth Low Energy (BLE).
- * Operates offline without internet, cell towers, or centralized servers.
+ * Uses compact 16-bit Service UUID + 15-byte Service Data (total 23 bytes in AD structure),
+ * strictly guaranteeing it fits within legacy 31-byte advertisement limits across all chipsets.
  */
 class BleAdvertiser(
     private val context: Context,
@@ -38,13 +38,21 @@ class BleAdvertiser(
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
             super.onStartSuccess(settingsInEffect)
             isAdvertising = true
-            Log.i(TAG, "BLE SOS Advertising started successfully")
+            Log.i(TAG, "BLE SOS Advertising started successfully (Packet fits in legacy 31B)")
         }
 
         override fun onStartFailure(errorCode: Int) {
             super.onStartFailure(errorCode)
             isAdvertising = false
-            Log.e(TAG, "BLE SOS Advertising failed with error code: $errorCode")
+            val errorMsg = when (errorCode) {
+                ADVERTISE_FAILED_DATA_TOO_LARGE -> "ADVERTISE_FAILED_DATA_TOO_LARGE (Code 1)"
+                ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "ADVERTISE_FAILED_TOO_MANY_ADVERTISERS (Code 2)"
+                ADVERTISE_FAILED_ALREADY_STARTED -> "ADVERTISE_FAILED_ALREADY_STARTED (Code 3)"
+                ADVERTISE_FAILED_INTERNAL_ERROR -> "ADVERTISE_FAILED_INTERNAL_ERROR (Code 4)"
+                ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "ADVERTISE_FAILED_FEATURE_UNSUPPORTED (Code 5)"
+                else -> "Error Code $errorCode"
+            }
+            Log.e(TAG, "BLE SOS Advertising failed: $errorMsg")
         }
     }
 
@@ -65,12 +73,11 @@ class BleAdvertiser(
 
         advertiser = adapter.bluetoothLeAdvertiser
         if (advertiser == null) {
-            Log.e(TAG, "BLE Advertising not supported on this device")
+            Log.e(TAG, "BLE Advertising not supported on this device chipset")
             return
         }
 
         val encodedPacket = PacketCodec.encode(packet)
-        val parcelUuid = ParcelUuid(Constants.SOS_SERVICE_UUID)
 
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
@@ -79,16 +86,24 @@ class BleAdvertiser(
             .setTimeout(0) // handled by coroutine
             .build()
 
+        // 16-bit Service UUID (4 bytes) + 16-bit Service Data (19 bytes) = 23 bytes total!
+        // Easily fits inside 31-byte legacy limit without chipset truncation.
         val data = AdvertiseData.Builder()
-            .addServiceUuid(parcelUuid)
-            .addServiceData(parcelUuid, encodedPacket)
+            .addServiceUuid(Constants.SOS_PARCEL_UUID)
+            .addServiceData(Constants.SOS_PARCEL_UUID, encodedPacket)
             .setIncludeDeviceName(false)
             .setIncludeTxPowerLevel(false)
             .build()
 
+        // Scan response adds manufacturer data fallback
+        val scanResponse = AdvertiseData.Builder()
+            .addManufacturerData(Constants.MANUFACTURER_ID, encodedPacket)
+            .setIncludeDeviceName(false)
+            .build()
+
         try {
-            advertiser?.startAdvertising(settings, data, callback)
-            Log.i(TAG, "Initiated BLE advertising for packet: $packet")
+            advertiser?.startAdvertising(settings, data, scanResponse, callback)
+            Log.i(TAG, "Initiated BLE advertising for packet: $packet (${encodedPacket.size} bytes)")
 
             // Schedule auto-stop after 60s
             timeoutJob?.cancel()

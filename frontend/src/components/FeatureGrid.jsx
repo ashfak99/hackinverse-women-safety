@@ -25,7 +25,7 @@ export default function FeatureGrid({ onSelectFeature }) {
       id: 'broadcast',
       title: 'Broadcast',
       subtitle: 'Live alert to nearby phones offline.',
-      description: 'Encodes 15-byte binary packet under custom 128-bit UUID and broadcasts over Bluetooth Low Energy for 60 seconds.',
+      description: 'Encodes 15-byte binary packet under 16-bit Service UUID (0xFDE1) and broadcasts over Bluetooth Low Energy for 60 seconds.',
       icon: Radio,
       badge: 'Peer-to-Peer BLE',
       color: 'from-[#FF4B8B] to-[#FF2D78]'
@@ -34,7 +34,7 @@ export default function FeatureGrid({ onSelectFeature }) {
       id: 'community',
       title: 'Community',
       subtitle: 'Join a safer, stronger network.',
-      description: 'Nearby phones receive high-priority heads-up alarms even screen-off, with estimated proximity (<3m, 3-8m) and 2-way ACK.',
+      description: 'Nearby phones receive high-priority heads-up alarms even screen-off, with estimated proximity (<3m, 3-10m, >10m) and 2-way ACK.',
       icon: Users,
       badge: '2-Way ACK Mesh',
       color: 'from-[#D81B60] to-[#AD1457]'

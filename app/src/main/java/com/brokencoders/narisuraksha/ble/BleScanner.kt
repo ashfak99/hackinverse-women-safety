@@ -23,8 +23,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Scans for nearby BLE SOS broadcasts.
- * Filters by custom Service UUID, decodes packets, deduplicates repeating packets,
- * and emits ReceivedSos events with RSSI distance information.
+ * Supports 16-bit Service UUID, 128-bit UUID, and Manufacturer Data fallback.
+ * Decodes packets, rate-limits alerts per sender ID, and emits ReceivedSos events with RSSI.
  */
 class BleScanner(
     private val context: Context,
@@ -42,8 +42,9 @@ class BleScanner(
     val received: Flow<ReceivedSos> = _received.asSharedFlow()
 
     private var isScanning = false
-    // Map to dedupe packets: key = "senderId:timestamp", value = last received system time
-    private val seenPackets = ConcurrentHashMap<String, Long>()
+    // Map to rate-limit and dedupe packets: key = senderId (Short), value = last received system time
+    private val senderLastSeenMap = ConcurrentHashMap<Short, Long>()
+    private val packetDedupeMap = ConcurrentHashMap<String, Long>()
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
@@ -67,22 +68,33 @@ class BleScanner(
         if (result == null) return
 
         val scanRecord = result.scanRecord ?: return
-        val parcelUuid = ParcelUuid(Constants.SOS_SERVICE_UUID)
-        var serviceData = scanRecord.getServiceData(parcelUuid)
+        
+        // 1. Try 16-bit Service Data
+        var payloadBytes = scanRecord.getServiceData(Constants.SOS_PARCEL_UUID)
 
-        // Fallback: search all service data entries if UUID matching had variation
-        if (serviceData == null && scanRecord.serviceData != null) {
+        // 2. Try 128-bit Legacy Service Data
+        if (payloadBytes == null) {
+            payloadBytes = scanRecord.getServiceData(ParcelUuid(Constants.SOS_LEGACY_128_UUID))
+        }
+
+        // 3. Try Manufacturer Data fallback
+        if (payloadBytes == null) {
+            payloadBytes = scanRecord.getManufacturerSpecificData(Constants.MANUFACTURER_ID)
+        }
+
+        // 4. Scan all available service data entries if UUID variation occurred
+        if (payloadBytes == null && scanRecord.serviceData != null) {
             for ((_, data) in scanRecord.serviceData) {
                 if (data.size >= PacketCodec.PACKET_SIZE_BYTES) {
-                    serviceData = data
+                    payloadBytes = data
                     break
                 }
             }
         }
 
-        if (serviceData == null) return
+        if (payloadBytes == null) return
 
-        val packet = PacketCodec.decode(serviceData) ?: return
+        val packet = PacketCodec.decode(payloadBytes) ?: return
 
         // Ignore our own broadcasted packets
         if (packet.senderId == deviceIdProvider.deviceId) {
@@ -91,19 +103,29 @@ class BleScanner(
 
         val now = System.currentTimeMillis()
         val dedupeKey = "${packet.senderId}:${packet.timestamp}"
-        val lastSeen = seenPackets[dedupeKey]
+        val lastSeenForPacket = packetDedupeMap[dedupeKey]
+        val lastSeenForSender = senderLastSeenMap[packet.senderId]
 
         // Clean up old seen entries (> 3 minutes)
-        seenPackets.entries.removeIf { now - it.value > 180_000L }
+        if (packetDedupeMap.size > 200) {
+            packetDedupeMap.entries.removeIf { now - it.value > 180_000L }
+            senderLastSeenMap.entries.removeIf { now - it.value > 180_000L }
+        }
 
-        // Dedupe identical alert if received within 10 seconds to avoid spamming alerts,
-        // but still update flow
-        if (lastSeen != null && (now - lastSeen < 10_000L)) {
+        // Rate-limit incoming alerts per sender ID (10s cooldown) unless it is an ACK
+        if (!packet.isAck && lastSeenForSender != null && (now - lastSeenForSender < Constants.PACKET_RATE_LIMIT_MS)) {
             return
         }
 
-        seenPackets[dedupeKey] = now
-        Log.i(TAG, "Received SOS packet from sender ${packet.senderId}, RSSI: ${result.rssi} dBm, flags: ${packet.flags}")
+        // Dedupe exact identical packet
+        if (lastSeenForPacket != null && (now - lastSeenForPacket < 5_000L)) {
+            return
+        }
+
+        packetDedupeMap[dedupeKey] = now
+        senderLastSeenMap[packet.senderId] = now
+
+        Log.i(TAG, "Decoded valid SOS packet from sender ${packet.senderId}, RSSI: ${result.rssi} dBm, isAck: ${packet.isAck}")
 
         val receivedSos = ReceivedSos(
             packet = packet,
@@ -137,10 +159,11 @@ class BleScanner(
             return
         }
 
+        // Build filters for 16-bit UUID, 128-bit UUID, and Manufacturer Data
         val filters = listOf(
-            ScanFilter.Builder()
-                .setServiceUuid(ParcelUuid(Constants.SOS_SERVICE_UUID))
-                .build()
+            ScanFilter.Builder().setServiceUuid(Constants.SOS_PARCEL_UUID).build(),
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(Constants.SOS_LEGACY_128_UUID)).build(),
+            ScanFilter.Builder().setManufacturerData(Constants.MANUFACTURER_ID, byteArrayOf()).build()
         )
 
         val settingsBuilder = ScanSettings.Builder()
@@ -155,9 +178,15 @@ class BleScanner(
         try {
             scanner?.startScan(filters, settingsBuilder.build(), scanCallback)
             isScanning = true
-            Log.i(TAG, "BLE Scanner started successfully")
+            Log.i(TAG, "BLE Scanner started with multi-payload filters")
         } catch (e: Exception) {
-            Log.e(TAG, "Exception starting BLE scan", e)
+            Log.e(TAG, "Exception starting BLE scan with filters, trying fallback scan without filters", e)
+            try {
+                scanner?.startScan(scanCallback)
+                isScanning = true
+            } catch (e2: Exception) {
+                Log.e(TAG, "Fallback BLE scan failed", e2)
+            }
         }
     }
 

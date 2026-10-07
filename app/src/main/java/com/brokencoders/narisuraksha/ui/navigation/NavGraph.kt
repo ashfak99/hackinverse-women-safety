@@ -31,7 +31,8 @@ fun NariSurakshaNavGraph(
     ) {
         composable(Screen.Onboarding.route) {
             OnboardingScreen(
-                onComplete = {
+                onComplete = { customPin ->
+                    mainViewModel.updateSecretDecoyCode(customPin)
                     mainViewModel.setOnboardingCompleted(true)
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
