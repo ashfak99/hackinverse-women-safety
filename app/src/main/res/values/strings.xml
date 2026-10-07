@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Nari Suraksha</string>
+    <string name="app_tagline">Network gayab, fir bhi help alive.</string>
+    <string name="sos_broadcast_title">SOS Broadcasting</string>
+    <string name="sos_broadcast_desc">Broadcasting offline BLE distress signal to nearby responders</string>
+    <string name="scan_service_title">Nari Suraksha Active Guardian</string>
+    <string name="scan_service_desc">Offline BLE mesh scanning is active in background</string>
+    <string name="alert_notification_title">EMERGENCY: SOS Nearby!</string>
+    <string name="alert_notification_desc">A distress signal was received nearby.</string>
+</resources>
