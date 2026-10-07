@@ -1,6 +1,6 @@
 # 🛡️ Nari-Suraksha (Silent SOS)
 > **"Network gayab, fir bhi help alive."**  
-> Offline-First Women's Safety & Peer-to-Peer Distress Broadcast System over Bluetooth Low Energy (BLE) with Decoy Mode.
+> Offline-First Women's Safety & Peer-to-Peer Distress Broadcast System over Bluetooth Low Energy (BLE) with Decoy Mode & 2-Way Responder ACK.
 
 ---
 
@@ -18,11 +18,18 @@ Using autonomous peer-to-peer **Bluetooth Low Energy (BLE) broadcasting**, an SO
   - **1-Tap Pulsating Hero SOS Button** with tactile ring feedback.
   - **3-Shake Accelerometer Sensor**: Detects 3 rapid shakes (> 2.7g) within 2 seconds with a 3-second cooldown to prevent false alarms.
   - **5-Second Cancel Window**: Countdown circle with audio/vibration cues to allow cancellation before broadcast.
-- 🧮 **Decoy Mode (Calculator Disguise)**: Fully functional arithmetic calculator. Entering a secret PIN (default `1234`) followed by `=` covertly triggers SOS; long-pressing `=` unlocks the full application.
+- 🧮 **Decoy Mode (Calculator Disguise) & Custom PIN**:
+  - Fully functional arithmetic calculator (`+`, `-`, `×`, `÷`, `%`).
+  - Entering a secret PIN (default `1234` or custom-configured) followed by `=` covertly triggers SOS.
+  - Long-pressing `=` unlocks the full safety application.
+  - **In-App Safety Settings**: Change the 4-digit secret PIN at any time.
+- 👥 **2-Way Responder Acknowledgment (ACK) & Live Counter**:
+  - Responders can tap **"I AM RESPONDING (SEND ACK)"** to transmit a BLE confirmation beacon back to the victim.
+  - The victim's device displays a live counter: *"👥 N Nearby Responder(s) Alerted! Help acknowledged your beacon and is heading your way."*
 - 🎙️ **Offline Audio Evidence Capture**: Automatically records microphone evidence to secure app-private storage upon SOS confirmation.
-- 📍 **Offline GPS Location & Navigation**: Captures GPS coordinates with offline fallback, offering one-tap navigation and proximity estimation via RSSI (`Near < 3m`, `Medium 3–8m`, `Far > 10m`).
+- 📍 **Offline GPS Location & Proximity Tracking**: Captures GPS coordinates with offline fallback, offering one-tap navigation and proximity estimation via RSSI (`Near < 3m`, `Medium 3–8m`, `Far > 10m`).
 - 🚨 **Responder Assistance Tools**: Built-in loud deterrent siren and flashlight strobe to locate victims in the dark.
-- 🏥 **Offline Safe Zones Directory**: Pre-cached directory of 24x7 Women Help Desks, Police Stations, Metro Security Posts, and Trauma Centers with direct emergency dialers.
+- 🏥 **Offline Safe Zones Directory**: Pre-cached directory of 24x7 Women Help Desks, Police Stations, Metro Security Posts, and Trauma Centers with direct emergency dialers (112, 1091).
 - 🛡️ **Always-On Background Guardian**: Persistent foreground service that keeps scanning for distress beacons even when the screen is locked.
 
 ---
@@ -127,7 +134,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## 🧪 2-Phone Offline Demo Walkthrough (Hackathon Guide)
 
-Follow this 2-minute demo flow to showcase the offline capability:
+Follow this 2-minute demo flow to showcase the full offline 2-way communication:
 
 ```
 [Phone A: Sender]                                [Phone B: Responder]
@@ -147,7 +154,10 @@ SOS Confirmed!                                              |
                                                             • High-priority alarm sound & vibration
                                                             • Distance bucket: "< 3m away" (RSSI)
                                                             • Shows GPS Coordinates & Map intent
-                                                            • Strobe torch & siren helper tools
+                                                            • Responder taps "I AM RESPONDING"
+                                                                    |
+Live Responder Counter Updates! <-------------------------- Transmits ACK Beacon
+"👥 1 Nearby Responder Alerted!"
 ```
 
 ---
@@ -157,7 +167,7 @@ SOS Confirmed!                                              |
 ```
 com.brokencoders.narisuraksha
 ├── core/
-│   ├── SosPacket.kt             # 15-byte compact binary packet contract
+│   ├── SosPacket.kt             # 15-byte compact binary packet contract with ACK flag
 │   ├── Constants.kt             # Custom 128-bit UUID, RSSI buckets, channel IDs
 │   ├── DeviceIdProvider.kt      # Anonymous 16-bit random device ID provider
 │   └── PermissionHelper.kt      # Runtime permission & battery optimization checks
@@ -185,7 +195,7 @@ com.brokencoders.narisuraksha
 │   ├── SosEventEntity.kt        # Room database entity (Sent/Received)
 │   ├── SosDao.kt                # Room Data Access Object
 │   ├── AppDatabase.kt           # Room Database singleton
-│   └── UserPreferencesRepository# DataStore preferences
+│   └── UserPreferencesRepository# DataStore preferences (PIN, Scan, Shake)
 ├── decoy/
 │   ├── CalculatorEngine.kt      # Real arithmetic engine (+, -, *, /, %)
 │   ├── DecoyViewModel.kt        # Secret PIN validation & unlock triggers
@@ -193,7 +203,7 @@ com.brokencoders.narisuraksha
 └── ui/
     ├── theme/                   # Material 3 safety color system (Red/Teal/Dark)
     ├── navigation/              # Compose NavHost graph
-    ├── components/              # SosPulseButton, CountdownOverlay, StatusBadge
+    ├── components/              # SosPulseButton, CountdownOverlay, SettingsDialog, StatusBadge
     ├── screens/                 # HomeScreen, AlertScreen, HistoryScreen, SafeZoneScreen, OnboardingScreen
     └── viewmodels/              # MainViewModel, HistoryViewModel
 ```
@@ -207,15 +217,15 @@ com.brokencoders.narisuraksha
 | **Gradle JDK Version Mismatch** | Ensure your Gradle JDK is set to **JDK 17** in Android Studio (`Settings -> Build, Execution, Deployment -> Build Tools -> Gradle -> Gradle JDK`). |
 | **Bluetooth Scan not receiving packets** | Ensure **Location** and **Nearby Devices (Bluetooth)** permissions are granted in the Onboarding screen. Make sure Bluetooth is toggled **ON**. |
 | **Background scanning killed on Xiaomi/Samsung/Oppo** | Tap **"Disable Battery Optimization"** in the Onboarding screen and select *Unrestricted / No Restrictions*. |
-| **Audio recording fails** | Grant the `RECORD_AUDIO` permission during onboarding. Audio files are saved privately in `Android/data/com.brokencoders.narisuraksha/files/sos_recordings/`. |
+| **Audio recording location** | Grant the `RECORD_AUDIO` permission during onboarding. Audio files are saved privately in `Android/data/com.brokencoders.narisuraksha/files/sos_recordings/`. |
 
 ---
 
 ## 👥 Team Broken Coders (Hackinverse 1.0)
 - **Workstream A (Trigger & Capture):** Shake sensor, Countdown, Audio evidence, GPS fallback.
 - **Workstream B (BLE Engine):** Packet codec, BLE advertiser & scanner, foreground services.
-- **Workstream C (UI & Navigation):** Compose theme, Home, Alert, Safe zones, History.
-- **Workstream D (Decoy & Storage):** Calculator disguise, Room DB, Permission onboarding.
+- **Workstream C (UI & Navigation):** Compose theme, Home, Alert, Safe zones, History, Settings.
+- **Workstream D (Decoy & Storage):** Calculator disguise, Room DB, Permission onboarding, DataStore PIN.
 
 ---
 
