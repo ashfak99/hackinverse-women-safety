@@ -4,6 +4,20 @@
 
 ---
 
+## 📥 Direct APK Download & Quick Install (Method 1)
+
+You can download and install the ready-to-run Android APK directly onto your phone without compiling code:
+
+👉 **[📥 Download Nari-Suraksha Debug APK (`app-debug.apk`)](https://github.com/Hasnainyt/hackinverse-women-safety/raw/main/app-debug.apk)**
+
+### 📲 How to Install (Method 1 - Easiest):
+1. **Download `app-debug.apk`** on your Android phone using the direct download link above (or send it via WhatsApp, Telegram, or Google Drive).
+2. Tap the downloaded file on your phone and select **Install**.
+3. *If prompted:* Enable **"Install from unknown sources"** or **"Allow from this source"** in your phone settings.
+4. Open **Nari-Suraksha**, complete the 1-minute permission setup, and you're protected 100% offline!
+
+---
+
 ## 🌟 Overview
 **Nari-Suraksha** is a mission-critical Android safety application built for emergencies where **cellular networks, internet connectivity, or cloud servers are unavailable, jammed, or disabled**. 
 
@@ -34,9 +48,9 @@ Using autonomous peer-to-peer **Bluetooth Low Energy (BLE) broadcasting**, an SO
 
 ---
 
-## 📋 Prerequisites
+## 📋 Prerequisites (For Developers)
 
-Before setting up the project, make sure you have:
+If you are setting up the development environment from source:
 
 | Tool | Recommended Version | Download Link |
 |---|---|---|
@@ -113,21 +127,21 @@ sdk.dir=/home/<YOUR_USERNAME>/Android/Sdk
 ```
 
 The generated APK will be available at:
-📁 `app/build/outputs/apk/debug/app-debug.apk`
+📁 `app/build/outputs/apk/debug/app-debug.apk` and `app-debug.apk`
 
 ---
 
-## 📱 Installing & Testing on Real Devices
+## 📱 Alternative Installation Methods
 
-### Option A: Via Android Studio
+### Method 2: Via Android Studio (Direct Run)
 1. Enable **Developer Options** and **USB Debugging** on your Android device.
 2. Connect your phone via USB or Wireless Debugging.
 3. Select your device from the top toolbar dropdown in Android Studio.
 4. Click the green **Run (▶)** button.
 
-### Option B: Via ADB (Command Line)
+### Method 3: Via ADB (Command Line)
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app-debug.apk
 ```
 
 ---
