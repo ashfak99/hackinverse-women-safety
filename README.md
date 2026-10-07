@@ -11,7 +11,7 @@
 ## 🌐 Live Web Portal & Simulator
 
 👉 **[Launch Nari-Suraksha Live Web Hub (Vercel)](https://hackinverse-women-safety.vercel.app/)**  
-*(Experience the interactive 2-Phone BLE mesh simulation, Decoy Calculator PIN trigger, and offline architecture directly in your browser)*
+*(Experience the interactive 2-Phone BLE broadcast simulation, Decoy Calculator PIN trigger, and offline architecture directly in your browser. Note: This web portal is an illustrative demonstration — web browsers do not broadcast native BLE packets. Download the Android APK for real hardware radio testing).*
 
 ---
 
@@ -22,10 +22,11 @@ You can download and install the ready-to-run Android APK directly onto your pho
 👉 **[📥 Download Nari-Suraksha Debug APK (`app-debug.apk`)](https://github.com/Hasnainyt/hackinverse-women-safety/raw/main/app-debug.apk)**
 
 ### 📲 How to Install (Method 1 - Easiest):
-1. **Download `app-debug.apk`** on your Android phone using the direct download link above (or send it via WhatsApp, Telegram, or Google Drive).
-2. Tap the downloaded file on your phone and select **Install**.
-3. *If prompted:* Enable **"Install from unknown sources"** or **"Allow from this source"** in your phone settings.
-4. Open **Nari-Suraksha**, complete the 1-minute permission setup, and you're protected 100% offline!
+1. **Download `app-debug.apk`** on your Android phone using the direct download link above (or transfer via WhatsApp, Telegram, or USB).
+2. Tap the downloaded APK on your phone and select **Install**.
+3. *If prompted by Google Play Protect:* Because this hackathon APK is distributed directly outside the Google Play Store, Play Protect may display an *"Unrecognized app"* warning. Tap **"More details"** and then **"Install anyway"**.
+4. *If prompted by Android:* Enable **"Install from unknown sources"** or **"Allow from this source"** in your phone settings.
+5. Open the app named **"Calculator"** (the decoy launcher icon for Nari-Suraksha), complete the 1-minute permission setup, and choose your custom 4-digit secret PIN.
 
 ---
 
@@ -38,26 +39,28 @@ Using autonomous peer-to-peer **Bluetooth Low Energy (BLE) broadcasting**, an em
 
 ## 🚀 Key Features
 
-- 📴 **Works Without Cellular or Internet**: Autonomous BLE advertisement using compact 16-bit Service UUID data structures fitting within the standard legacy 31-byte BLE packet (15-byte payload: `senderId`, `timestamp`, `lat`, `lon`, `flags`).
+- 📴 **Works Without Cellular or Internet**: Autonomous BLE advertisement using compact 16-bit Service UUID data structures fitting within the standard legacy 31-byte BLE packet (17-byte wire payload: `magic`, `version`, `senderId`, `timestamp`, `lat`, `lon`, `flags`).
 - ⚡ **Multi-Trigger SOS**:
   - **1-Tap Pulsating Hero SOS Button** with tactile ring feedback.
   - **3-Shake Accelerometer Sensor**: Detects 3 rapid shakes (> 2.7g) within 2 seconds with a 3-second cooldown to prevent false alarms.
   - **5-Second Cancel Window**: Countdown overlay with audio/vibration cues to cancel accidental triggers.
-- 🧮 **Decoy Mode (Calculator Disguise) & Anti-Forensics**:
+- 🧮 **Decoy Mode (Calculator Disguise) & Discretion and Privacy Features**:
   - Fully functional arithmetic calculator (`+`, `-`, `×`, `÷`, `%`) named **"Calculator"** with a neutral calculator icon.
-  - **Forced Custom PIN Onboarding**: Users set their own secret 4-digit PIN during onboarding (no default 1234).
+  - **Forced Custom PIN Onboarding**: Users set their own secret 4-digit PIN during onboarding (no default PIN).
   - Entering the secret PIN followed by `=` covertly triggers the SOS broadcast.
   - Long-pressing `=` unlocks the full guardian interface.
-  - **FLAG_SECURE Protection**: Prevents app screenshots and blanks out Android Recents thumbnail previews when in real emergency screens.
-  - **Evidence & Log Wipe**: One-tap action to purge all incident history and audio recordings from the device.
+  - **FLAG_SECURE Protection**: Prevents app screenshots and blanks out Android Recents thumbnail previews when viewing sensitive emergency screens.
+  - **User-Confirmed Evidence & Log Wipe**: Secure option to purge incident history and local audio recordings, requiring explicit dialog confirmation so critical legal evidence isn't erased accidentally.
 - 👥 **2-Way Responder Acknowledgment (ACK) & Live Counter**:
-  - Responders can tap **"I AM RESPONDING (SEND ACK)"** to transmit a BLE confirmation beacon back to the sender.
-  - The sender's screen updates in real time: *"A nearby person has acknowledged your alert."*
-- 🎙️ **Local Audio Evidence Recording**: Automatically records microphone audio to app-private storage upon SOS confirmation.
+  - Responders can tap **"I AM RESPONDING (SEND ACK)"** to transmit a targeted BLE confirmation beacon back to the victim.
+  - The victim's screen updates in real time: *"A nearby person has acknowledged your alert."*
+  - Responders are uniquely tracked and deduplicated: tapping twice increments the counter only once, and ACKs match only the sender who broadcast distress.
+- 🎙️ **Local Audio Evidence Recording**: Automatically records microphone audio to app-private storage upon SOS confirmation (configured with `FOREGROUND_SERVICE_MICROPHONE` for Android 14/15 background compliance).
 - 📍 **Offline GPS Location & Proximity Estimation**: Captures GPS coordinates with offline fallback, offering one-tap map navigation and RSSI distance estimation (`Near < 3m`, `Medium 3–10m`, `Far > 10m` — labeled approximate due to RF noise).
 - 🚨 **Built-in Deterrent Siren & Flashlight**: High-decibel alarm siren and strobe torch to deter attackers or help responders locate the victim in darkness.
 - 🏥 **Offline Safe Zones Directory**: Pre-cached directory of 24x7 Women Help Desks, Police Stations, and Hospitals with emergency dialers (112, 1091 — *Note: voice calls require active cellular connection*).
 - 🛡️ **Always-On Background Guardian**: Persistent background service ("Calculator Service") with low-visibility notifications that continues listening for distress beacons even when the screen is locked.
+- 🛑 **Dual-Tier Rate Limiting & Abuse Prevention**: 10-second per-sender spam rejection combined with a global cap (max 10 alerts/minute across all senders) to mitigate spoofed ID-rotation floods.
 
 ---
 
@@ -164,12 +167,12 @@ adb install -r app-debug.apk
 Follow this 2-minute demo flow to showcase the full offline 2-way communication:
 
 ```
-[Phone A: Sender]                                [Phone B: Responder]
+[Phone A: Sender / Victim]                       [Phone B: Responder]
 Airplane Mode + Bluetooth ON                     Airplane Mode + Bluetooth ON
            |                                                |
 Open Calculator (Decoy Mode)                      Screen Off / In Background
            |                                                |
-Enter PIN `1234` + press `=`                                |
+Enter custom PIN (set during onboarding) + press `=`        |
            |                                                |
 5s Animated Countdown Circle                                |
 (Option to cancel if false alarm)                           |
@@ -181,10 +184,10 @@ SOS Confirmed!                                              |
                                                             • High-priority alarm sound & vibration
                                                             • Distance bucket: "< 3m away" (RSSI)
                                                             • Shows GPS Coordinates & Map intent
-                                                            • Responder taps "I AM RESPONDING"
+                                                            • Responder taps "I AM RESPONDING (SEND ACK)"
                                                                     |
-Live Responder Counter Updates! <-------------------------- Transmits ACK Beacon
-"👥 1 Nearby Responder Alerted!"
+Live Responder Counter Updates! <-------------------------- Transmits targeted ACK Beacon
+"A nearby person has acknowledged your alert"
 ```
 
 ---
@@ -194,8 +197,8 @@ Live Responder Counter Updates! <-------------------------- Transmits ACK Beacon
 ```
 com.brokencoders.narisuraksha
 ├── core/
-│   ├── SosPacket.kt             # 15-byte compact binary packet contract with ACK flag
-│   ├── Constants.kt             # Custom 128-bit UUID, RSSI buckets, channel IDs
+│   ├── SosPacket.kt             # 17-byte binary packet contract with targeted ACK matching
+│   ├── Constants.kt             # 16-bit Service UUID (0xFDE1), RSSI buckets, channel IDs, rate limit caps
 │   ├── DeviceIdProvider.kt      # Anonymous 16-bit random device ID provider
 │   └── PermissionHelper.kt      # Runtime permission & battery optimization checks
 ├── trigger/
@@ -208,9 +211,9 @@ com.brokencoders.narisuraksha
 │   ├── AudioRecorder.kt         # MediaRecorder AAC evidence capture in private storage
 │   └── LocationProvider.kt      # Offline GPS coordinate provider with fallback
 ├── ble/
-│   ├── PacketCodec.kt           # ByteBuffer binary serializer/deserializer (15 bytes)
+│   ├── PacketCodec.kt           # Binary serializer/deserializer (17-byte spec + 15-byte legacy fallback)
 │   ├── BleAdvertiser.kt         # Low-latency BLE advertiser with 60s auto-stop
-│   ├── BleScanner.kt            # Continuous BLE scanner with deduplication
+│   ├── BleScanner.kt            # Continuous BLE scanner with deduplication & global rate limiting
 │   ├── BleTransport.kt          # BLE transport interface
 │   ├── BleTransportImpl.kt      # Concrete BLE transport implementation
 │   └── FakeBleTransport.kt      # Fake BLE transport for testing
@@ -245,9 +248,9 @@ com.brokencoders.narisuraksha
 |---|---|---|
 | **Packet Authentication** | Open binary broadcast without digital signatures for instant zero-handshake transmission. | Elliptic Curve (ECDSA) digital signatures with public-key exchange. |
 | **Packet Privacy** | Raw anonymous payload without user identifying names or phone numbers. | Ephemeral Diffie-Hellman payload encryption for trusted contact rings. |
-| **Spoofing & Spam Mitigation** | Per-sender rate limiting (10-second spam rejection window per sender ID). | Cryptographic proof-of-work or challenge-response verification. |
-| **Relay Topology** | Single-hop direct broadcast + direct 2-way ACK. | Multi-hop mesh store-and-forward relay across intermediary nodes. |
-| **Anti-Forensics** | Disguised launcher, neutral notifications, `FLAG_SECURE` window, and storage purge. | Secure biometric enclave key destruction and encrypted database. |
+| **Spoofing & Spam Mitigation** | Dual-tier mitigation: 10s per-sender cooldown + global rate limit cap (max 10 alerts/minute across all senders). Limitation: Attackers rapidly rotating spoofed sender IDs can exhaust the global alert window. | Cryptographic challenge-response and ephemeral ECDSA signatures. |
+| **Relay Topology** | Single-hop direct broadcast + targeted 2-way ACK. | Multi-hop mesh store-and-forward relay across intermediary nodes. |
+| **Discretion & Privacy Features** | Disguised launcher ("Calculator"), neutral background notifications ("Calculator Service"), `FLAG_SECURE` window, and user-confirmed evidence wipe. Limitation: Package name (`com.brokencoders.narisuraksha`), sideload traces, and Android system app lists will still reveal the app under deep forensic inspection. | Plausible deniability storage vaults, hardware-backed Keystore enclave key destruction. |
 
 ---
 
@@ -256,26 +259,82 @@ com.brokencoders.narisuraksha
 To ensure universal compatibility across Android chipsets (Samsung, Xiaomi, Vivo/Oppo, Pixel, OnePlus), Nari-Suraksha packages all distress telemetry strictly within the legacy 31-byte Bluetooth advertising packet:
 
 ```
-[ AD Record 1: 16-bit Service UUID ] (4 Bytes)
+[ AD Record 1: 16-bit Complete Service UUID List ] (4 Bytes)
   ├── Length: 0x03 (3 bytes)
   ├── AD Type: 0x03 (16-bit Complete Service UUID List)
   └── Service UUID: 0xFDE1 (2 bytes)
 
-[ AD Record 2: 16-bit Service Data ] (19 Bytes)
-  ├── Length: 0x12 (18 bytes)
+[ AD Record 2: 16-bit Service Data ] (21 Bytes)
+  ├── Length: 0x14 (20 bytes following: AD Type 1B + UUID 2B + SOS Wire Payload 17B)
   ├── AD Type: 0x16 (Service Data - 16-bit UUID)
   ├── UUID: 0xFDE1 (2 bytes)
-  └── SOS Payload: 15 Bytes
+  └── SOS Wire Payload: 17 Bytes
         ├── Magic Byte: 0x53 ('S') (1 byte)
         ├── Version: 0x01 (1 byte)
         ├── Sender ID: Short (2 bytes)
-        ├── Timestamp: Int (4 bytes)
-        ├── Latitude: Float (4 bytes)
-        ├── Longitude: Float (4 bytes)
-        └── Flags: Bit 0 = ACK, Bit 1 = Audio Recorded (1 byte)
+        ├── Timestamp / Target Sender ID: Int (4 bytes)
+        ├── Latitude: Float IEEE 754 (4 bytes)
+        ├── Longitude: Float IEEE 754 (4 bytes)
+        └── Flags: Bit 0 = SOS, Bit 1 = Location Unavailable, Bit 2 = ACK (1 byte)
 
-Total AD Payload: 23 Bytes <= 31 Bytes (Safe on all chipsets)
+Total AD Structure: 4 (Record 1) + 21 (Record 2) = 25 Bytes <= 31 Bytes (Safe on all chipsets)
 ```
+
+> [!NOTE]
+> **Why AD Record 1 is Retained (Scan Filter Compatibility)**:  
+> The 16-bit Service UUID (`0xFDE1`) is already contained within AD Record 2 (Service Data). Omitting AD Record 1 would save 4 bytes (reducing total AD payload from 25 to 21 bytes). However, Android's `BluetoothLeScanner` hardware filters match `ScanFilter.Builder().setServiceUuid()` against AD Record 1 (AD Type `0x03`). Retaining AD Record 1 ensures hardware-filtered background wakeups succeed reliably when the phone screen is locked across heterogeneous OEM chipsets, while remaining safely below the 31-byte limit (25 bytes <= 31 bytes).
+
+> [!IMPORTANT]
+> **Bluetooth SIG UUID Notice (`0xFDE1`)**:  
+> `0xFDE1` falls within the Bluetooth SIG 16-bit member-allocated range (suitable for hackathon and prototyping). A commercial production deployment would register an official UUID with the Bluetooth SIG or adopt a registered 128-bit custom service UUID.
+
+---
+
+## 🔬 Rigorous Pre-Submission Verification & Testing Guide
+
+Before submitting or evaluating the app, verify these 5 critical edge cases to ensure a seamless demonstration:
+
+### 1. Shake Detection with Screen Locked (5+ Minutes)
+- **Background Constraint**: Android strictly limits sensors for background applications, and OEM battery optimizers (Samsung OneUI, Xiaomi HyperOS/MIUI, Oppo/Vivo) often suspend accelerometer events when the screen has been turned off for several minutes.
+- **Verification Procedure**:
+  1. Open Calculator, complete onboarding, and ensure Background Service and Shake Detection are toggled ON.
+  2. Disable battery optimization for the app (*Settings -> Apps -> Calculator -> Battery -> Unrestricted*).
+  3. Turn off the phone screen and leave it on a table for **5+ minutes**.
+  4. Without pressing the power button, firmly shake the phone 3 times.
+  5. Verify that the haptic countdown and audible cue trigger, followed by the distress broadcast.
+
+### 2. Android 14 & 15 Foreground Service Restrictions (Microphone & Location)
+- **Platform Constraint**: Android 14 (API 34) and Android 15 (API 35) block background services from accessing the microphone or location unless started with explicit `foregroundServiceType` declarations.
+- **Verification Procedure**:
+  - The app declares `FOREGROUND_SERVICE_MICROPHONE` and `FOREGROUND_SERVICE_LOCATION` permissions.
+  - `SosForegroundService` specifies `android:foregroundServiceType="connectedDevice|location|microphone"`.
+  - When SOS is triggered from a locked screen, verify that audio evidence is successfully recorded to app-private storage and GPS coordinates are acquired without throwing a `SecurityException`.
+
+### 3. Cross-Brand OEM Testing (Samsung, Xiaomi, Oppo/Vivo, Pixel)
+- **Hardware Diversity**: Different manufacturers use different Bluetooth chipsets (Qualcomm, MediaTek, Exynos, Broadcom) with differing BLE advertising intervals and scan duty cycles.
+- **Verification Procedure**:
+  - Test the 2-phone demo across different brands (e.g. Samsung + Xiaomi or Pixel + Vivo).
+  - Verify that advertisements broadcast via `BleAdvertiser` with `ADVERTISE_MODE_LOW_LATENCY` are received within 1–3 seconds on the scanning device.
+
+### 4. 3-Phone Concurrency, Deduplication, and Targeted ACK Matching
+- **Setup**: Phone A (Victim / SOS Broadcaster), Phone B (Responder 1), Phone C (Responder 2).
+- **Verification Procedure**:
+  1. Phone A initiates SOS broadcast (Device ID: e.g., `#1001`).
+  2. Both Phone B and Phone C receive the alarm simultaneously.
+  3. Phone B taps **"I AM RESPONDING (SEND ACK)"**. Phone B transmits an ACK targeted to `#1001`.
+  4. Phone A's screen updates: *"A nearby person has acknowledged your alert"* (1 Responder).
+  5. If Phone B taps the ACK button again, verify Phone A's counter **stays at 1** (deduplication ensures one responder tapping twice counts only once).
+  6. Phone C taps **"I AM RESPONDING"**. Phone A's counter increments to **2 Responders**.
+  7. Confirm that Phone B's screen does NOT treat Phone C's ACK as meant for itself because the ACK packet carries Phone A's original sender ID (`targetSenderId`).
+
+### 5. Google Play Protect Warning & Building Signed Release APK
+- **Play Protect Advisory**: Because `app-debug.apk` is sideloaded directly without Google Play Store signing, Google Play Protect may display an *"Unrecognized app"* warning prompt.
+- **To install during testing**: Tap **"More details"** -> **"Install anyway"**.
+- **Building a signed release APK**:
+  ```bash
+  ./gradlew assembleRelease
+  ```
+  *(Sign with your production keystore using `apksigner` or via Android Studio: Build -> Generate Signed Bundle / APK).*
 
 ---
 

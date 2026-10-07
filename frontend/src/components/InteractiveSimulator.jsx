@@ -118,14 +118,20 @@ export default function InteractiveSimulator() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-pink-100">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#FF2D78] animate-pulse" />
             <h3 className="text-2xl font-black text-[#2D1522]">
-              Interactive 2-Phone BLE Mesh Simulator
+              Interactive 2-Phone BLE Broadcast Simulator
             </h3>
+            <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+              Illustrative Demo • Not Real BLE
+            </span>
           </div>
           <p className="text-xs sm:text-sm text-gray-600 font-medium mt-1">
-            Test the end-to-end offline SOS broadcast, Decoy Calculator PIN trigger, and 2-way Responder ACK live in your browser.
+            Simulate single-hop offline SOS broadcast, Decoy Calculator PIN trigger, and 2-way Responder ACK live in your browser.
+            <span className="block text-gray-500 text-[11px] mt-0.5 italic">
+              *Illustrative simulation only: web browsers cannot transmit native BLE packets. Download and install the Android APK for authentic offline Bluetooth Low Energy radio transmission.
+            </span>
           </p>
         </div>
 

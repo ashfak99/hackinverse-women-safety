@@ -18,7 +18,7 @@ export default function HeroBanner({ onOpenSimulator }) {
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/90 border border-pink-200 shadow-sm">
             <Shield className="w-4 h-4 text-[#FF2D78] fill-pink-100" />
             <span className="text-xs font-bold text-[#FF2D78] tracking-wide">
-              Women's Safety & Offline BLE Mesh
+              Women's Safety & Offline BLE Broadcast
             </span>
             <span className="w-1.5 h-1.5 rounded-full bg-[#FF2D78] animate-ping" />
           </div>

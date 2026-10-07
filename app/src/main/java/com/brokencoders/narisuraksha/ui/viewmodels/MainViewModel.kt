@@ -62,6 +62,8 @@ class MainViewModel(
 
     private val _responderAckCount = MutableStateFlow(0)
     val responderAckCount: StateFlow<Int> = _responderAckCount.asStateFlow()
+    // Tracks unique responder IDs who have acknowledged this device's current SOS beacon
+    private val acknowledgedResponders = mutableSetOf<Short>()
 
     private val _isFlashlightOn = MutableStateFlow(false)
     val isFlashlightOn: StateFlow<Boolean> = _isFlashlightOn.asStateFlow()
@@ -78,15 +80,18 @@ class MainViewModel(
                 when (event) {
                     is SosEvent.CountdownStarted -> {
                         Log.i(TAG, "SosEvent: Countdown started")
+                        acknowledgedResponders.clear()
                         _responderAckCount.value = 0
                     }
                     is SosEvent.Cancelled -> {
                         Log.i(TAG, "SosEvent: SOS Cancelled")
+                        acknowledgedResponders.clear()
                         _responderAckCount.value = 0
                         SosForegroundService.stop(context)
                     }
                     is SosEvent.Confirmed -> {
                         Log.i(TAG, "SosEvent: SOS Confirmed! Launching broadcast service...")
+                        acknowledgedResponders.clear()
                         _responderAckCount.value = 0
                         SosForegroundService.start(
                             context = context,
@@ -103,8 +108,20 @@ class MainViewModel(
         viewModelScope.launch {
             bleTransport.received.collectLatest { receivedSos ->
                 if (receivedSos.packet.isAck) {
-                    Log.i(TAG, "Received ACK confirmation from responder: ${receivedSos.packet.senderId}")
-                    _responderAckCount.value = _responderAckCount.value + 1
+                    val targetId = receivedSos.packet.targetSenderId
+                    val myDeviceId = deviceIdProvider.deviceId
+                    // Only count ACK if addressed to our device (or 0 for legacy broadcast ACK)
+                    if (targetId == 0.toShort() || targetId == myDeviceId) {
+                        val responderId = receivedSos.packet.senderId
+                        if (acknowledgedResponders.add(responderId)) {
+                            Log.i(TAG, "Distinct responder #$responderId confirmed our distress beacon. Total responders: ${acknowledgedResponders.size}")
+                            _responderAckCount.value = acknowledgedResponders.size
+                        } else {
+                            Log.d(TAG, "Duplicate ACK from responder #$responderId ignored")
+                        }
+                    } else {
+                        Log.d(TAG, "Ignoring ACK intended for sender #$targetId (my deviceId is #$myDeviceId)")
+                    }
                 } else {
                     _latestReceivedAlert.value = receivedSos
                 }
@@ -134,28 +151,32 @@ class MainViewModel(
     }
 
     fun triggerSos() {
+        acknowledgedResponders.clear()
         _responderAckCount.value = 0
         sosManager.triggerSos()
     }
 
     fun cancelCountdown() {
+        acknowledgedResponders.clear()
         _responderAckCount.value = 0
         sosManager.cancelCountdown()
     }
 
     fun stopSos() {
+        acknowledgedResponders.clear()
         _responderAckCount.value = 0
         sosManager.stopSos()
         SosForegroundService.stop(context)
     }
 
     fun sendResponderAck(targetSenderId: Short) {
-        Log.i(TAG, "Sending responder ACK beacon to sender #$targetSenderId")
+        Log.i(TAG, "Sending responder ACK beacon targeting sender #$targetSenderId")
         val ackPacket = SosPacket.create(
             senderId = deviceIdProvider.deviceId,
             lat = null,
             lon = null,
-            isAck = true
+            isAck = true,
+            targetSenderId = targetSenderId
         )
         bleTransport.startAdvertising(ackPacket)
     }

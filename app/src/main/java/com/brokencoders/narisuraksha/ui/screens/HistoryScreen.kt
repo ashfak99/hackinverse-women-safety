@@ -25,10 +25,12 @@ import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,6 +79,7 @@ fun HistoryScreen(
     val events by viewModel.events.collectAsState()
     val playingAudioPath by viewModel.currentlyPlayingAudioPath.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
+    var showClearAllConfirmation by remember { mutableStateOf(false) }
 
     val filteredEvents = remember(events, selectedTab) {
         when (selectedTab) {
@@ -83,6 +87,52 @@ fun HistoryScreen(
             2 -> events.filter { it.eventType == SosEventEntity.TYPE_RECEIVED }
             else -> events
         }
+    }
+
+    if (showClearAllConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearAllConfirmation = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = EmergencyRed
+                )
+            },
+            title = {
+                Text(
+                    text = "Clear Incident History & Evidence?",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = "This action will permanently delete all recorded SOS distress broadcasts, received beacons, and captured audio evidence from this phone.\n\nVictim evidence cannot be recovered once purged. Are you sure you wish to proceed?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearAllHistory()
+                        showClearAllConfirmation = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmergencyRed)
+                ) {
+                    Text("Permanently Erase", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showClearAllConfirmation = false }
+                ) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = Color(0xFF222222)
+        )
     }
 
     Scaffold(
@@ -106,7 +156,7 @@ fun HistoryScreen(
                 },
                 actions = {
                     if (events.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.clearAllHistory() }) {
+                        IconButton(onClick = { showClearAllConfirmation = true }) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
                                 contentDescription = "Clear All",

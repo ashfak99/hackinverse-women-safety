@@ -20,7 +20,10 @@ class PacketCodecTest {
         )
 
         val encoded = PacketCodec.encode(original)
-        assertEquals(15, encoded.size)
+        // 1 magic + 1 version + 2 sender + 4 timestamp + 4 lat + 4 lon + 1 flags = 17 bytes
+        assertEquals(17, encoded.size)
+        assertEquals(0x53.toByte(), encoded[0]) // Magic byte 'S'
+        assertEquals(0x01.toByte(), encoded[1]) // Protocol version
 
         val decoded = PacketCodec.decode(encoded)
         assertNotNull(decoded)
@@ -33,6 +36,44 @@ class PacketCodecTest {
     }
 
     @Test
+    fun testLegacy15ByteDecodeFallback() {
+        // Construct raw 15-byte packet without magic/version header
+        val legacyBuffer = java.nio.ByteBuffer.allocate(15)
+        legacyBuffer.order(java.nio.ByteOrder.BIG_ENDIAN)
+        legacyBuffer.putShort(999.toShort())
+        legacyBuffer.putInt(1650000000)
+        legacyBuffer.putFloat(12.34f)
+        legacyBuffer.putFloat(56.78f)
+        legacyBuffer.put(SosPacket.FLAG_SOS.toByte())
+
+        val decoded = PacketCodec.decode(legacyBuffer.array())
+        assertNotNull(decoded)
+        assertEquals(999.toShort(), decoded!!.senderId)
+        assertEquals(1650000000, decoded.timestamp)
+        assertEquals(12.34f, decoded.lat, 0.0001f)
+        assertEquals(56.78f, decoded.lon, 0.0001f)
+        assertTrue(decoded.isSos)
+    }
+
+    @Test
+    fun testAckTargetSenderId() {
+        val ackPacket = SosPacket.create(
+            senderId = 555.toShort(),
+            lat = null,
+            lon = null,
+            isAck = true,
+            targetSenderId = 12345.toShort()
+        )
+
+        val encoded = PacketCodec.encode(ackPacket)
+        val decoded = PacketCodec.decode(encoded)
+        assertNotNull(decoded)
+        assertTrue(decoded!!.isAck)
+        assertEquals(555.toShort(), decoded.senderId)
+        assertEquals(12345.toShort(), decoded.targetSenderId)
+    }
+
+    @Test
     fun testLocationUnavailableFlag() {
         val packet = SosPacket.create(
             senderId = (-4321).toShort(),
@@ -42,6 +83,7 @@ class PacketCodecTest {
         )
 
         val encoded = PacketCodec.encode(packet)
+        assertEquals(17, encoded.size)
         val decoded = PacketCodec.decode(encoded)
 
         assertNotNull(decoded)

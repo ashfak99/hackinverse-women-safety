@@ -36,7 +36,7 @@ export default function FeatureGrid({ onSelectFeature }) {
       subtitle: 'Join a safer, stronger network.',
       description: 'Nearby phones receive high-priority heads-up alarms even screen-off, with estimated proximity (<3m, 3-10m, >10m) and 2-way ACK.',
       icon: Users,
-      badge: '2-Way ACK Mesh',
+      badge: '2-Way ACK Broadcast',
       color: 'from-[#D81B60] to-[#AD1457]'
     }
   ]
@@ -46,7 +46,7 @@ export default function FeatureGrid({ onSelectFeature }) {
       id: 'decoy',
       title: 'Decoy Calculator Disguise',
       subtitle: 'Hidden in Plain Sight',
-      description: 'A fully working arithmetic calculator that covertly triggers SOS when entering secret PIN (e.g. 1234=) or unlocks real app on long-press =.',
+      description: 'A fully working arithmetic calculator that covertly triggers SOS when entering secret PIN followed by = or unlocks real guardian UI on long-press =.',
       icon: Calculator,
       tag: 'Anti-Tamper'
     },

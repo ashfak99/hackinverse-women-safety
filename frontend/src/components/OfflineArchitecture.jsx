@@ -15,12 +15,12 @@ export default function OfflineArchitecture() {
     },
     {
       num: '03',
-      title: '15-Byte BLE Packetizer',
-      desc: 'Encodes senderId (2B), timestamp (4B), lat (4B), lon (4B), and flags (1B) into a 23-byte AD frame under 16-bit Service UUID (0xFDE1).'
+      title: '17-Byte BLE Packetizer',
+      desc: 'Encodes magic (1B), version (1B), senderId (2B), timestamp (4B), lat (4B), lon (4B), and flags (1B) into a 25-byte legacy AD frame under 16-bit Service UUID (0xFDE1).'
     },
     {
       num: '04',
-      title: 'P2P Mesh Broadcast & 2-Way ACK',
+      title: 'P2P Direct Broadcast & 2-Way ACK',
       desc: 'Nearby phones receive heads-up sirens even screen-off, estimate distance via RSSI, and transmit responder ACK beacons.'
     }
   ]
@@ -46,7 +46,7 @@ export default function OfflineArchitecture() {
           <WifiOff className="w-5 h-5 text-[#FF4B8B]" />
           <div>
             <p className="text-xs font-bold text-white">0 Server Reliance</p>
-            <p className="text-[10px] text-pink-200">Autonomous Edge Mesh</p>
+            <p className="text-[10px] text-pink-200">Autonomous Edge Broadcast</p>
           </div>
         </div>
       </div>
