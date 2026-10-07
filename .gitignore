@@ -11,3 +11,8 @@ local.properties
 app/build/
 *.apk
 !app-debug.apk
+
+# Frontend web app
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
