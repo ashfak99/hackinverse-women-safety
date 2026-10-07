@@ -18,16 +18,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocalPolice
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.outlined.FlashlightOff
-import androidx.compose.material.icons.outlined.VolumeOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -42,6 +45,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.brokencoders.narisuraksha.ui.components.CountdownOverlay
+import com.brokencoders.narisuraksha.ui.components.SettingsDialog
 import com.brokencoders.narisuraksha.ui.components.SosPulseButton
 import com.brokencoders.narisuraksha.ui.components.StatusBadge
 import com.brokencoders.narisuraksha.ui.theme.EmergencyRed
@@ -77,9 +84,13 @@ fun HomeScreen(
     val isShakeEnabled by viewModel.isShakeEnabled.collectAsState()
     val isScanEnabled by viewModel.isScanEnabled.collectAsState()
     val isDecoyEnabled by viewModel.isDecoyEnabled.collectAsState()
+    val secretPin by viewModel.secretDecoyCode.collectAsState()
+    val responderAckCount by viewModel.responderAckCount.collectAsState()
     val latestAlert by viewModel.latestReceivedAlert.collectAsState()
     val isFlashlightOn by viewModel.isFlashlightOn.collectAsState()
     val isSirenOn by viewModel.isSirenOn.collectAsState()
+
+    var isSettingsOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background
@@ -142,28 +153,43 @@ fun HomeScreen(
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .background(Color(0xFF242424))
-                                .size(40.dp)
+                                .size(38.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Calculate,
                                 contentDescription = "Decoy Calculator",
                                 tint = Color.LightGray,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         IconButton(
                             onClick = onNavigateToHistory,
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .background(Color(0xFF242424))
-                                .size(40.dp)
+                                .size(38.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.History,
                                 contentDescription = "History",
                                 tint = Color.LightGray,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        IconButton(
+                            onClick = { isSettingsOpen = true },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(Color(0xFF242424))
+                                .size(38.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = Color.LightGray,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -248,7 +274,45 @@ fun HomeScreen(
                     }
                 )
 
+                // Responder Acknowledgment Card (Option B Live Counter)
                 if (isSosActive) {
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (responderAckCount > 0) Color(0xFF1B5E20) else Color(0xFF2E2E2E)
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (responderAckCount > 0) Icons.Default.CheckCircle else Icons.Default.People,
+                                contentDescription = null,
+                                tint = if (responderAckCount > 0) Color.White else VigilanceAmber,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = if (responderAckCount > 0) "👥 $responderAckCount Nearby Responder(s) Alerted!" else "Broadcasting to Nearby Responders...",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (responderAckCount > 0) "Help acknowledged your beacon and is heading your way." else "Distress packet transmitting peer-to-peer via BLE.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = { viewModel.stopSos() },
@@ -284,7 +348,7 @@ fun HomeScreen(
                         ) {
                             ToolButton(
                                 title = if (isSirenOn) "Stop Siren" else "Loud Siren",
-                                icon = if (isSirenOn) Icons.Outlined.VolumeOff else Icons.Default.VolumeUp,
+                                icon = if (isSirenOn) Icons.AutoMirrored.Outlined.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                                 isActive = isSirenOn,
                                 activeColor = EmergencyRed,
                                 modifier = Modifier.weight(1f),
@@ -341,7 +405,7 @@ fun HomeScreen(
 
                         SettingToggleRow(
                             title = "Decoy Calculator Mode",
-                            subtitle = "Disguise app as calculator with PIN trigger",
+                            subtitle = "Disguise app as calculator with PIN trigger (PIN: $secretPin)",
                             icon = Icons.Default.Calculate,
                             checked = isDecoyEnabled,
                             onCheckedChange = { viewModel.setDecoyModeEnabled(it) }
@@ -403,6 +467,16 @@ fun HomeScreen(
                 remainingSeconds = countdownSeconds,
                 onCancel = { viewModel.cancelCountdown() }
             )
+
+            // Settings Dialog
+            if (isSettingsOpen) {
+                SettingsDialog(
+                    currentPin = secretPin,
+                    anonymousDeviceId = viewModel.anonymousDeviceId,
+                    onSavePin = { viewModel.updateSecretDecoyCode(it) },
+                    onDismiss = { isSettingsOpen = false }
+                )
+            }
         }
     }
 }

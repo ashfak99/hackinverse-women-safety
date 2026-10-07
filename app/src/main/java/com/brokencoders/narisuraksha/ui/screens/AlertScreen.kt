@@ -49,6 +49,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,6 +86,7 @@ fun AlertScreen(
 
     val isFlashlightOn by viewModel.isFlashlightOn.collectAsState()
     val isSirenOn by viewModel.isSirenOn.collectAsState()
+    var isAckSent by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -298,6 +302,35 @@ fun AlertScreen(
                         )
                     }
                 }
+            }
+
+            // Responder Acknowledgment Button (Stretch Option B)
+            Button(
+                onClick = {
+                    viewModel.sendResponderAck(senderId)
+                    isAckSent = true
+                    Toast.makeText(context, "ACK beacon transmitted! Victim's phone is notified.", Toast.LENGTH_LONG).show()
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isAckSent) Color(0xFF1B5E20) else SafeGreen,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+            ) {
+                Icon(
+                    imageVector = if (isAckSent) Icons.Default.Warning else Icons.Default.SignalCellularAlt,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isAckSent) "✓ ACK TRANSMITTED TO SENDER" else "I AM RESPONDING (SEND ACK)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

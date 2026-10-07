@@ -11,6 +11,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.brokencoders.narisuraksha.ble.BleTransport
 import com.brokencoders.narisuraksha.ble.ReceivedSos
+import com.brokencoders.narisuraksha.core.DeviceIdProvider
+import com.brokencoders.narisuraksha.core.SosPacket
 import com.brokencoders.narisuraksha.data.UserPreferencesRepository
 import com.brokencoders.narisuraksha.service.ScanForegroundService
 import com.brokencoders.narisuraksha.service.SosForegroundService
@@ -30,7 +32,8 @@ class MainViewModel(
     private val sosManager: SosManager,
     private val bleTransport: BleTransport,
     private val shakeDetector: ShakeDetector,
-    private val preferencesRepository: UserPreferencesRepository
+    private val preferencesRepository: UserPreferencesRepository,
+    private val deviceIdProvider: DeviceIdProvider
 ) : ViewModel() {
 
     val isCountingDown: StateFlow<Boolean> = sosManager.isCountingDown
@@ -46,11 +49,19 @@ class MainViewModel(
     val isDecoyEnabled: StateFlow<Boolean> = preferencesRepository.isDecoyModeEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    val secretDecoyCode: StateFlow<String> = preferencesRepository.secretDecoyCode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "1234")
+
     val isOnboardingCompleted: StateFlow<Boolean> = preferencesRepository.isOnboardingCompleted
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    val anonymousDeviceId: Short get() = deviceIdProvider.deviceId
+
     private val _latestReceivedAlert = MutableStateFlow<ReceivedSos?>(null)
     val latestReceivedAlert: StateFlow<ReceivedSos?> = _latestReceivedAlert.asStateFlow()
+
+    private val _responderAckCount = MutableStateFlow(0)
+    val responderAckCount: StateFlow<Int> = _responderAckCount.asStateFlow()
 
     private val _isFlashlightOn = MutableStateFlow(false)
     val isFlashlightOn: StateFlow<Boolean> = _isFlashlightOn.asStateFlow()
@@ -67,13 +78,16 @@ class MainViewModel(
                 when (event) {
                     is SosEvent.CountdownStarted -> {
                         Log.i(TAG, "SosEvent: Countdown started")
+                        _responderAckCount.value = 0
                     }
                     is SosEvent.Cancelled -> {
                         Log.i(TAG, "SosEvent: SOS Cancelled")
+                        _responderAckCount.value = 0
                         SosForegroundService.stop(context)
                     }
                     is SosEvent.Confirmed -> {
                         Log.i(TAG, "SosEvent: SOS Confirmed! Launching broadcast service...")
+                        _responderAckCount.value = 0
                         SosForegroundService.start(
                             context = context,
                             lat = event.lat,
@@ -85,10 +99,15 @@ class MainViewModel(
             }
         }
 
-        // Collect incoming BLE alerts
+        // Collect incoming BLE alerts & ACKs
         viewModelScope.launch {
             bleTransport.received.collectLatest { receivedSos ->
-                _latestReceivedAlert.value = receivedSos
+                if (receivedSos.packet.isAck) {
+                    Log.i(TAG, "Received ACK confirmation from responder: ${receivedSos.packet.senderId}")
+                    _responderAckCount.value = _responderAckCount.value + 1
+                } else {
+                    _latestReceivedAlert.value = receivedSos
+                }
             }
         }
 
@@ -115,16 +134,39 @@ class MainViewModel(
     }
 
     fun triggerSos() {
+        _responderAckCount.value = 0
         sosManager.triggerSos()
     }
 
     fun cancelCountdown() {
+        _responderAckCount.value = 0
         sosManager.cancelCountdown()
     }
 
     fun stopSos() {
+        _responderAckCount.value = 0
         sosManager.stopSos()
         SosForegroundService.stop(context)
+    }
+
+    fun sendResponderAck(targetSenderId: Short) {
+        Log.i(TAG, "Sending responder ACK beacon to sender #$targetSenderId")
+        val ackPacket = SosPacket.create(
+            senderId = deviceIdProvider.deviceId,
+            lat = null,
+            lon = null,
+            isAck = true
+        )
+        bleTransport.startAdvertising(ackPacket)
+    }
+
+    fun updateSecretDecoyCode(newPin: String) {
+        if (newPin.length == 4 && newPin.all { it.isDigit() }) {
+            viewModelScope.launch {
+                preferencesRepository.setSecretDecoyCode(newPin)
+                Log.i(TAG, "Decoy PIN updated to: $newPin")
+            }
+        }
     }
 
     fun setOnboardingCompleted(completed: Boolean) {
@@ -205,7 +247,8 @@ class MainViewModel(
             sosManager: SosManager,
             bleTransport: BleTransport,
             shakeDetector: ShakeDetector,
-            preferencesRepository: UserPreferencesRepository
+            preferencesRepository: UserPreferencesRepository,
+            deviceIdProvider: DeviceIdProvider
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -214,7 +257,8 @@ class MainViewModel(
                     sosManager,
                     bleTransport,
                     shakeDetector,
-                    preferencesRepository
+                    preferencesRepository,
+                    deviceIdProvider
                 ) as T
             }
         }

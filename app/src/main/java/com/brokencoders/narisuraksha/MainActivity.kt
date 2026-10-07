@@ -29,7 +29,8 @@ class MainActivity : ComponentActivity() {
             sosManager = app.sosManager,
             bleTransport = app.bleTransport,
             shakeDetector = app.shakeDetector,
-            preferencesRepository = app.preferencesRepository
+            preferencesRepository = app.preferencesRepository,
+            deviceIdProvider = app.deviceIdProvider
         )
     }
 
