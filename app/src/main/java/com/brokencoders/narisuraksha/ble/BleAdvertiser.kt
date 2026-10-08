@@ -86,8 +86,9 @@ class BleAdvertiser(
             .setTimeout(0) // handled by coroutine
             .build()
 
-        // 16-bit Service UUID (4 bytes) + 16-bit Service Data (19 bytes) = 23 bytes total!
-        // Easily fits inside 31-byte legacy limit without chipset truncation.
+        // AD Record 1 (16-bit Service UUID: 4 bytes) + AD Record 2 (16-bit Service Data: 21 bytes) = 25 bytes total.
+        // Easily fits inside 31-byte legacy advertising packet limit without chipset truncation.
+        // AD Record 1 is kept specifically so receiver hardware ScanFilters wake up on screen-off.
         val data = AdvertiseData.Builder()
             .addServiceUuid(Constants.SOS_PARCEL_UUID)
             .addServiceData(Constants.SOS_PARCEL_UUID, encodedPacket)

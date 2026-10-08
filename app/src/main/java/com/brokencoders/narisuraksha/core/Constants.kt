@@ -6,6 +6,8 @@ import java.util.UUID
 object Constants {
     // 16-bit BLE Service UUID (0xFDE1) mapped into standard Bluetooth Base UUID.
     // Encodes in 16-bit form (4 bytes in AD structure), leaving ample room in 31-byte legacy adverts.
+    // Note: 0xFDE1 falls in the Bluetooth SIG-allocated 16-bit member range (suitable for hackathon prototyping).
+    // A commercial production release would register an official UUID with the Bluetooth SIG or adopt a custom 128-bit UUID.
     val SOS_SERVICE_UUID: UUID = UUID.fromString("0000FDE1-0000-1000-8000-00805F9B34FB")
     val SOS_PARCEL_UUID: ParcelUuid = ParcelUuid(SOS_SERVICE_UUID)
 
@@ -29,6 +31,10 @@ object Constants {
 
     // Rate limiting for incoming packets per sender ID
     const val PACKET_RATE_LIMIT_MS = 10_000L
+
+    // Global alert rate limiting across all senders (mitigates spoofed ID-rotation flood attacks)
+    const val GLOBAL_ALERT_RATE_LIMIT_MAX_PER_MINUTE = 10
+    const val GLOBAL_ALERT_RATE_LIMIT_WINDOW_MS = 60_000L
 
     // Notification Channel IDs
     const val CHANNEL_ALERT_ID = "nari_emergency_alert_channel"

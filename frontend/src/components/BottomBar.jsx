@@ -16,7 +16,7 @@ export default function BottomBar({ onTriggerQuickDemo }) {
               You are not alone. Help is just a tap away.
             </p>
             <p className="hidden sm:block text-[11px] text-pink-700/80 font-medium">
-              Offline BLE mesh is active & listening peer-to-peer.
+              Offline BLE broadcast is active & listening peer-to-peer.
             </p>
           </div>
         </div>

@@ -3,6 +3,8 @@ package com.brokencoders.narisuraksha.service
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import com.brokencoders.narisuraksha.NariSurakshaApp
@@ -24,7 +26,17 @@ class SosForegroundService : Service() {
         super.onCreate()
         Log.d(TAG, "SosForegroundService onCreate")
         val notificationHelper = (application as NariSurakshaApp).notificationHelper
-        startForeground(Constants.NOTIFICATION_ID_SOS_ACTIVE, notificationHelper.buildSosBroadcastingNotification())
+        val notification = notificationHelper.buildSosBroadcastingNotification()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            var fgsType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+            startForeground(Constants.NOTIFICATION_ID_SOS_ACTIVE, notification, fgsType)
+        } else {
+            startForeground(Constants.NOTIFICATION_ID_SOS_ACTIVE, notification)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
                     val isOnboardingCompleted by mainViewModel.isOnboardingCompleted.collectAsState()
                     val isDecoyEnabled by mainViewModel.isDecoyEnabled.collectAsState()
 
-                    // Recents Anti-Forensics Protection (FLAG_SECURE):
+                    // Discretion and privacy protection (FLAG_SECURE):
                     // Blanks out the app preview thumbnail in Android Recents screen
                     // whenever inside real emergency screens (Home, Alert, History, SafeZones)
                     LaunchedEffect(currentRoute) {

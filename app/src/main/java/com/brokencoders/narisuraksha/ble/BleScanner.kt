@@ -20,11 +20,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
  * Scans for nearby BLE SOS broadcasts.
  * Supports 16-bit Service UUID, 128-bit UUID, and Manufacturer Data fallback.
- * Decodes packets, rate-limits alerts per sender ID, and emits ReceivedSos events with RSSI.
+ * Decodes packets, rate-limits alerts per sender ID, applies global alert rate limiting, and emits ReceivedSos events with RSSI.
  */
 class BleScanner(
     private val context: Context,
@@ -45,6 +46,8 @@ class BleScanner(
     // Map to rate-limit and dedupe packets: key = senderId (Short), value = last received system time
     private val senderLastSeenMap = ConcurrentHashMap<Short, Long>()
     private val packetDedupeMap = ConcurrentHashMap<String, Long>()
+    // Sliding window of alert timestamps across all senders (global rate limit against spoofed ID rotations)
+    private val globalAlertTimestamps = ConcurrentLinkedQueue<Long>()
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
@@ -85,7 +88,7 @@ class BleScanner(
         // 4. Scan all available service data entries if UUID variation occurred
         if (payloadBytes == null && scanRecord.serviceData != null) {
             for ((_, data) in scanRecord.serviceData) {
-                if (data.size >= PacketCodec.PACKET_SIZE_BYTES) {
+                if (data.size >= PacketCodec.LEGACY_PACKET_SIZE_BYTES) {
                     payloadBytes = data
                     break
                 }
@@ -112,6 +115,18 @@ class BleScanner(
             senderLastSeenMap.entries.removeIf { now - it.value > 180_000L }
         }
 
+        // Global rate limit: cap alerts across all sender IDs to mitigate spoofed ID-rotation flood attacks
+        if (!packet.isAck) {
+            val windowStart = now - Constants.GLOBAL_ALERT_RATE_LIMIT_WINDOW_MS
+            while (globalAlertTimestamps.peek()?.let { it < windowStart } == true) {
+                globalAlertTimestamps.poll()
+            }
+            if (globalAlertTimestamps.size >= Constants.GLOBAL_ALERT_RATE_LIMIT_MAX_PER_MINUTE) {
+                Log.w(TAG, "Global alert rate limit reached (${Constants.GLOBAL_ALERT_RATE_LIMIT_MAX_PER_MINUTE}/min). Suppressing alert from #${packet.senderId}")
+                return
+            }
+        }
+
         // Rate-limit incoming alerts per sender ID (10s cooldown) unless it is an ACK
         if (!packet.isAck && lastSeenForSender != null && (now - lastSeenForSender < Constants.PACKET_RATE_LIMIT_MS)) {
             return
@@ -120,6 +135,10 @@ class BleScanner(
         // Dedupe exact identical packet
         if (lastSeenForPacket != null && (now - lastSeenForPacket < 5_000L)) {
             return
+        }
+
+        if (!packet.isAck) {
+            globalAlertTimestamps.add(now)
         }
 
         packetDedupeMap[dedupeKey] = now
