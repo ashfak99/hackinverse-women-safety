@@ -2,8 +2,8 @@ package com.brokencoders.narisuraksha.trigger
 
 import android.content.Context
 import android.util.Log
-import com.brokencoders.narisuraksha.capture.AudioRecorder
-import com.brokencoders.narisuraksha.capture.LocationProvider
+import com.brokencoders.narisuraksha.capture.AudioEvidenceCapture
+import com.brokencoders.narisuraksha.capture.LocationCoordinateProvider
 import com.brokencoders.narisuraksha.core.Constants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,13 +20,14 @@ import kotlinx.coroutines.launch
 
 /**
  * Manages the SOS lifecycle:
- * Trigger -> 5s Countdown -> Capture (Audio + GPS) -> Confirmed SOS Broadcast
+ * Trigger -> 3s Countdown -> Capture (Audio + GPS) -> Confirmed SOS Broadcast
  */
 class SosManager(
-    private val context: Context,
-    private val audioRecorder: AudioRecorder,
-    private val locationProvider: LocationProvider,
-    private val externalScope: CoroutineScope = CoroutineScope(Dispatchers.Default)
+    private val context: Context? = null,
+    private val audioRecorder: AudioEvidenceCapture,
+    private val locationProvider: LocationCoordinateProvider,
+    private val externalScope: CoroutineScope = CoroutineScope(Dispatchers.Default),
+    private val countdownStepDelayMs: Long = 1000L
 ) : SosTrigger {
 
     private val _events = MutableSharedFlow<SosEvent>(
@@ -63,7 +64,7 @@ class SosManager(
         countdownJob = externalScope.launch {
             for (i in Constants.COUNTDOWN_DURATION_SECONDS downTo 1) {
                 _countdownSeconds.value = i
-                delay(1000L)
+                delay(countdownStepDelayMs)
             }
             _countdownSeconds.value = 0
             _isCountingDown.value = false

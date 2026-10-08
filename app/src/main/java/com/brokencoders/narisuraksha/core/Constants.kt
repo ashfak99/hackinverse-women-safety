@@ -21,13 +21,14 @@ object Constants {
     const val SOS_ADVERTISE_TIMEOUT_MS = 60_000L
 
     // Countdown duration in seconds
-    const val COUNTDOWN_DURATION_SECONDS = 5
+    const val COUNTDOWN_DURATION_SECONDS = 3
 
     // Shake detection thresholds
     const val SHAKE_THRESHOLD_G = 2.7f // ~2.7g
     const val SHAKE_SPIKE_WINDOW_MS = 2000L // 2 seconds window
     const val SHAKE_REQUIRED_SPIKES = 3
     const val SHAKE_COOLDOWN_MS = 3000L // 3 seconds cooldown between alerts
+    const val SHAKE_MIN_SPIKE_INTERVAL_MS = 220L // Minimum separation between distinct shake strokes
 
     // Rate limiting for incoming packets per sender ID
     const val PACKET_RATE_LIMIT_MS = 10_000L

@@ -6,18 +6,21 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.util.Log
-import com.brokencoders.narisuraksha.core.Constants
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlin.math.sqrt
 
 /**
  * Shake detector that uses the accelerometer.
  * Triggers when 3 spikes > 2.7g occur within a 2-second window, with a 3-second cooldown.
+ * Includes minimum spike interval debouncing to eliminate false positives from phone placement or drops.
  */
-class ShakeDetector(context: Context) : SensorEventListener {
+class ShakeDetector(
+    context: Context,
+    val engine: ShakeDetectionEngine = ShakeDetectionEngine()
+) : SensorEventListener {
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
     private val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -29,22 +32,35 @@ class ShakeDetector(context: Context) : SensorEventListener {
     )
     val shakeEvents: Flow<Unit> = _shakeEvents.asSharedFlow()
 
-    private val spikeTimestamps = ArrayDeque<Long>()
-    private var lastTriggerTimestamp: Long = 0L
-    private var isListening = false
+    val diagnostics: StateFlow<ShakeDiagnostics> get() = engine.diagnostics
 
+    val isSensorAvailable: Boolean get() = accelerometer != null && sensorManager != null
+    var isListening: Boolean = false
+        private set
+
+    init {
+        engine.updateListeningState(isListening = false, isSensorAvailable = isSensorAvailable)
+    }
+
+    @Synchronized
     fun start() {
-        if (isListening || accelerometer == null || sensorManager == null) return
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
+        if (isListening || !isSensorAvailable) {
+            engine.updateListeningState(isListening = isListening, isSensorAvailable = isSensorAvailable)
+            return
+        }
+        sensorManager?.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
         isListening = true
+        engine.updateListeningState(isListening = true, isSensorAvailable = true)
         Log.d(TAG, "ShakeDetector started")
     }
 
+    @Synchronized
     fun stop() {
-        if (!isListening || sensorManager == null) return
-        sensorManager.unregisterListener(this)
+        if (!isListening) return
+        sensorManager?.unregisterListener(this)
         isListening = false
-        spikeTimestamps.clear()
+        engine.reset()
+        engine.updateListeningState(isListening = false, isSensorAvailable = isSensorAvailable)
         Log.d(TAG, "ShakeDetector stopped")
     }
 
@@ -52,34 +68,16 @@ class ShakeDetector(context: Context) : SensorEventListener {
         if (event == null || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
 
         val now = System.currentTimeMillis()
+        val triggered = engine.processAcceleration(
+            x = event.values[0],
+            y = event.values[1],
+            z = event.values[2],
+            timestampMs = now
+        )
 
-        // Enforce cooldown
-        if (now - lastTriggerTimestamp < Constants.SHAKE_COOLDOWN_MS) {
-            return
-        }
-
-        val x = event.values[0]
-        val y = event.values[1]
-        val z = event.values[2]
-
-        // Calculate total g-force (Earth gravity is ~9.80665 m/s^2 = 1.0g)
-        val acceleration = sqrt((x * x + y * y + z * z).toDouble()).toFloat()
-        val gForce = acceleration / SensorManager.GRAVITY_EARTH
-
-        if (gForce >= Constants.SHAKE_THRESHOLD_G) {
-            // Evict spikes outside the sliding window (2 seconds)
-            while (spikeTimestamps.isNotEmpty() && now - spikeTimestamps.first() > Constants.SHAKE_SPIKE_WINDOW_MS) {
-                spikeTimestamps.removeFirst()
-            }
-
-            spikeTimestamps.addLast(now)
-
-            if (spikeTimestamps.size >= Constants.SHAKE_REQUIRED_SPIKES) {
-                Log.i(TAG, "Shake pattern detected! Triggering SOS countdown.")
-                lastTriggerTimestamp = now
-                spikeTimestamps.clear()
-                _shakeEvents.tryEmit(Unit)
-            }
+        if (triggered) {
+            Log.i(TAG, "Shake pattern detected! Triggering SOS countdown.")
+            _shakeEvents.tryEmit(Unit)
         }
     }
 

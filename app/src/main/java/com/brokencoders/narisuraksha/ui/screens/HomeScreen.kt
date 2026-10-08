@@ -21,15 +21,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocalPolice
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.outlined.FlashlightOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -38,6 +42,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -76,8 +81,15 @@ fun HomeScreen(
     onNavigateToHistory: () -> Unit,
     onNavigateToSafeZones: () -> Unit,
     onNavigateToDecoy: () -> Unit,
+    onNavigateToMap: () -> Unit,
+    onNavigateToContacts: () -> Unit,
+    onNavigateToBleDebug: () -> Unit,
     onNavigateToAlert: (senderId: Short, lat: Float, lon: Float, rssi: Int) -> Unit
 ) {
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.ensureGuardianScanActive()
+    }
+
     val isCountingDown by viewModel.isCountingDown.collectAsState()
     val countdownSeconds by viewModel.countdownSeconds.collectAsState()
     val isSosActive by viewModel.isSosActive.collectAsState()
@@ -325,6 +337,83 @@ fun HomeScreen(
                             color = Color.White
                         )
                     }
+
+                    // Emergency Contacts Alert Workflow (Part 4)
+                    val emergencyContacts by viewModel.emergencyContacts.collectAsState()
+                    if (emergencyContacts.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF22171B)),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "EMERGENCY CONTACTS (CALL / SMS)",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = EmergencyRed
+                                    )
+                                    Text(
+                                        text = "CELLULAR BACKUP",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
+                                        color = VigilanceAmber
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                emergencyContacts.take(3).forEach { contact ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(contact.name, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                                if (contact.isPrimary) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(3.dp))
+                                                            .background(EmergencyRed.copy(alpha = 0.2f))
+                                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    ) {
+                                                        Text("PRIMARY", fontSize = 8.sp, fontWeight = FontWeight.Black, color = EmergencyRed)
+                                                    }
+                                                }
+                                            }
+                                            Text("${contact.relationship} • ${contact.phoneNumber}", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Button(
+                                                onClick = { viewModel.callContact(contact.phoneNumber) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = SafeGreen),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.height(34.dp)
+                                            ) {
+                                                Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(13.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("CALL", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                            OutlinedButton(
+                                                onClick = { viewModel.sendEmergencySms(contact.phoneNumber) },
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.height(34.dp)
+                                            ) {
+                                                Text("SMS", fontSize = 11.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -385,7 +474,7 @@ fun HomeScreen(
 
                         SettingToggleRow(
                             title = "Shake to Trigger SOS",
-                            subtitle = "3 rapid shakes (2.7g) starts 5s countdown",
+                            subtitle = "3 rapid shakes (2.7g) starts 3s countdown",
                             icon = Icons.Default.Vibration,
                             checked = isShakeEnabled,
                             onCheckedChange = { viewModel.setShakeDetectionEnabled(it) }
@@ -414,6 +503,96 @@ fun HomeScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Offline Map & Radar Shortcut
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToMap() },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(GuardianBlue.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Map,
+                                contentDescription = "Offline Map",
+                                tint = GuardianBlue
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Offline Tactical Map & Radar",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Proximity radar, GPS coordinates & safe zones map",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Emergency Contacts Shortcut
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToContacts() },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(SafeGreen.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Emergency Contacts",
+                                tint = SafeGreen
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Emergency Contacts",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Manage trusted contacts for direct call and emergency SMS",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Safe Zones Card Shortcut
                 Card(
@@ -474,7 +653,8 @@ fun HomeScreen(
                     currentPin = secretPin,
                     anonymousDeviceId = viewModel.anonymousDeviceId,
                     onSavePin = { viewModel.updateSecretDecoyCode(it) },
-                    onDismiss = { isSettingsOpen = false }
+                    onDismiss = { isSettingsOpen = false },
+                    onOpenBleDebug = onNavigateToBleDebug
                 )
             }
         }
