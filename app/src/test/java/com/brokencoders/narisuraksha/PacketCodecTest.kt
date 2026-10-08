@@ -92,4 +92,47 @@ class PacketCodecTest {
         assertEquals(0.0f, decoded.lat, 0.0001f)
         assertEquals(0.0f, decoded.lon, 0.0001f)
     }
+
+    @Test
+    fun testTestSosPacketFlag() {
+        val testPacket = SosPacket.create(
+            senderId = 9876.toShort(),
+            lat = 28.6139,
+            lon = 77.2090,
+            isTest = true
+        )
+
+        org.junit.Assert.assertTrue(testPacket.isTest)
+        org.junit.Assert.assertFalse(testPacket.isSos)
+        org.junit.Assert.assertFalse(testPacket.isAck)
+
+        val encoded = PacketCodec.encode(testPacket)
+        assertEquals(17, encoded.size)
+        val decoded = PacketCodec.decode(encoded)
+
+        assertNotNull(decoded)
+        org.junit.Assert.assertTrue(decoded!!.isTest)
+        org.junit.Assert.assertFalse(decoded.isSos)
+        org.junit.Assert.assertFalse(decoded.isAck)
+        assertEquals(9876.toShort(), decoded.senderId)
+        assertEquals(28.6139f, decoded.lat, 0.0001f)
+        assertEquals(77.2090f, decoded.lon, 0.0001f)
+    }
+
+    @Test
+    fun testSafeZonesDistanceCalculation() {
+        // Distance to the exact same point should be 0.0
+        val distZero = com.brokencoders.narisuraksha.data.SafeZonesRepository.calculateDistanceKm(
+            28.6139, 77.2090,
+            28.6139, 77.2090
+        )
+        assertEquals(0.0, distZero, 0.001)
+
+        // Distance between CP (28.6304, 77.2177) and India Gate (28.6129, 77.2295) is approx 2.2 km
+        val distCpToGate = com.brokencoders.narisuraksha.data.SafeZonesRepository.calculateDistanceKm(
+            28.6304, 77.2177,
+            28.6129, 77.2295
+        )
+        assertTrue(distCpToGate in 1.8..2.6)
+    }
 }

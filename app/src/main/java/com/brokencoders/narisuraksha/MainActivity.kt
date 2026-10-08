@@ -33,7 +33,11 @@ class MainActivity : ComponentActivity() {
             bleTransport = app.bleTransport,
             shakeDetector = app.shakeDetector,
             preferencesRepository = app.preferencesRepository,
-            deviceIdProvider = app.deviceIdProvider
+            deviceIdProvider = app.deviceIdProvider,
+            emergencyContactDao = app.emergencyContactDao,
+            locationProvider = app.locationProvider,
+            bleAdvertiser = app.bleAdvertiser,
+            bleScanner = app.bleScanner
         )
     }
 

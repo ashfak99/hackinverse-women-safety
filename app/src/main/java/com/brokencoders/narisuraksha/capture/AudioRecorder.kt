@@ -10,18 +10,23 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+interface AudioEvidenceCapture {
+    fun startRecording(): String?
+    fun stopRecording(): String?
+}
+
 /**
  * Captures background audio evidence when an SOS is confirmed.
  * Audio is saved to app-private storage and never transmitted over BLE
  * (as BLE payload is too small for audio data).
  */
-class AudioRecorder(private val context: Context) {
+class AudioRecorder(private val context: Context) : AudioEvidenceCapture {
 
     private var mediaRecorder: MediaRecorder? = null
     private var currentRecordingFile: File? = null
     private var isRecording = false
 
-    fun startRecording(): String? {
+    override fun startRecording(): String? {
         if (!PermissionHelper.hasAudioPermission(context)) {
             Log.w(TAG, "Cannot start recording: RECORD_AUDIO permission not granted")
             return null
@@ -74,7 +79,7 @@ class AudioRecorder(private val context: Context) {
         }
     }
 
-    fun stopRecording(): String? {
+    override fun stopRecording(): String? {
         if (!isRecording) return null
 
         val path = currentRecordingFile?.absolutePath

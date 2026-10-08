@@ -68,6 +68,8 @@ class SosForegroundService : Service() {
 
         Log.i(TAG, "Starting BLE broadcast for packet: $packet")
         bleTransport.startAdvertising(packet)
+        // Ensure device is scanning simultaneously so incoming responder ACKs are captured!
+        bleTransport.startScanning()
 
         serviceScope.launch {
             // Persist SENT event to Room

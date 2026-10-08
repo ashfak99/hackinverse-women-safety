@@ -10,8 +10,11 @@ import androidx.navigation.navArgument
 import com.brokencoders.narisuraksha.decoy.CalculatorScreen
 import com.brokencoders.narisuraksha.decoy.DecoyViewModel
 import com.brokencoders.narisuraksha.ui.screens.AlertScreen
+import com.brokencoders.narisuraksha.ui.screens.BleDebugScreen
+import com.brokencoders.narisuraksha.ui.screens.EmergencyContactsScreen
 import com.brokencoders.narisuraksha.ui.screens.HistoryScreen
 import com.brokencoders.narisuraksha.ui.screens.HomeScreen
+import com.brokencoders.narisuraksha.ui.screens.MapScreen
 import com.brokencoders.narisuraksha.ui.screens.OnboardingScreen
 import com.brokencoders.narisuraksha.ui.screens.SafeZoneScreen
 import com.brokencoders.narisuraksha.ui.viewmodels.HistoryViewModel
@@ -62,6 +65,9 @@ fun NariSurakshaNavGraph(
                 onNavigateToHistory = { navController.navigate(Screen.History.route) },
                 onNavigateToSafeZones = { navController.navigate(Screen.SafeZones.route) },
                 onNavigateToDecoy = { navController.navigate(Screen.Decoy.route) },
+                onNavigateToMap = { navController.navigate(Screen.Map.route) },
+                onNavigateToContacts = { navController.navigate(Screen.EmergencyContacts.route) },
+                onNavigateToBleDebug = { navController.navigate(Screen.BleDebug.route) },
                 onNavigateToAlert = { senderId, lat, lon, rssi ->
                     navController.navigate(Screen.Alert.createRoute(senderId, lat, lon, rssi))
                 }
@@ -101,6 +107,27 @@ fun NariSurakshaNavGraph(
 
         composable(Screen.SafeZones.route) {
             SafeZoneScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Map.route) {
+            MapScreen(
+                viewModel = mainViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.EmergencyContacts.route) {
+            EmergencyContactsScreen(
+                viewModel = mainViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.BleDebug.route) {
+            BleDebugScreen(
+                viewModel = mainViewModel,
                 onBack = { navController.popBackStack() }
             )
         }

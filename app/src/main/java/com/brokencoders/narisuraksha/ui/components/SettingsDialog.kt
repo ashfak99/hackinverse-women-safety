@@ -29,6 +29,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -61,7 +62,8 @@ fun SettingsDialog(
     currentPin: String,
     anonymousDeviceId: Short,
     onSavePin: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenBleDebug: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var newPinText by remember { mutableStateOf(currentPin) }
@@ -208,7 +210,23 @@ fun SettingsDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                // BLE Diagnostics Button
+                OutlinedButton(
+                    onClick = {
+                        onDismiss()
+                        onOpenBleDebug()
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Vibration, contentDescription = null, tint = VigilanceAmber, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "BLE DIAGNOSTICS & TEST MODE", color = VigilanceAmber, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Save button
                 Button(

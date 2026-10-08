@@ -24,6 +24,7 @@ data class SosPacket(
     val isSos: Boolean get() = (flags.toInt() and FLAG_SOS) != 0
     val isLocationUnavailable: Boolean get() = (flags.toInt() and FLAG_LOCATION_UNAVAILABLE) != 0
     val isAck: Boolean get() = (flags.toInt() and FLAG_ACK) != 0
+    val isTest: Boolean get() = (flags.toInt() and FLAG_TEST) != 0
 
     // In an ACK beacon, the timestamp field carries the targeted original sender's ID
     val targetSenderId: Short get() = if (isAck) (timestamp and 0xFFFF).toShort() else 0
@@ -32,17 +33,21 @@ data class SosPacket(
         const val FLAG_SOS: Int = 1 shl 0
         const val FLAG_LOCATION_UNAVAILABLE: Int = 1 shl 1
         const val FLAG_ACK: Int = 1 shl 2
+        const val FLAG_TEST: Int = 1 shl 3
 
         fun create(
             senderId: Short,
-            lat: Double?,
-            lon: Double?,
+            lat: Double? = null,
+            lon: Double? = null,
             timestampSeconds: Int = (System.currentTimeMillis() / 1000L).toInt(),
             isAck: Boolean = false,
-            targetSenderId: Short = 0
+            targetSenderId: Short = 0,
+            isTest: Boolean = false
         ): SosPacket {
             var flagAccumulator = 0
-            if (!isAck) {
+            if (isTest) {
+                flagAccumulator = flagAccumulator or FLAG_TEST
+            } else if (!isAck) {
                 flagAccumulator = flagAccumulator or FLAG_SOS
             } else {
                 flagAccumulator = flagAccumulator or FLAG_ACK

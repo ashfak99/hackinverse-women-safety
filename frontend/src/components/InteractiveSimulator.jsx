@@ -6,7 +6,7 @@ export default function InteractiveSimulator() {
   
   // Phone A (Sender) State
   const [sosState, setSosState] = useState('idle') // 'idle' | 'countdown' | 'broadcasting'
-  const [countdown, setCountdown] = useState(5)
+  const [countdown, setCountdown] = useState(3)
   const [responderCount, setResponderCount] = useState(0)
 
   // Phone B (Receiver) State
@@ -48,7 +48,7 @@ export default function InteractiveSimulator() {
 
   const handleTriggerSos = () => {
     setSosState('countdown')
-    setCountdown(5)
+    setCountdown(3)
     setResponderCount(0)
     setIsAckSent(false)
     setReceivedAlert(null)
@@ -56,12 +56,12 @@ export default function InteractiveSimulator() {
 
   const handleCancelCountdown = () => {
     setSosState('idle')
-    setCountdown(5)
+    setCountdown(3)
   }
 
   const handleResetSimulator = () => {
     setSosState('idle')
-    setCountdown(5)
+    setCountdown(3)
     setResponderCount(0)
     setReceivedAlert(null)
     setIsAckSent(false)
@@ -273,7 +273,7 @@ export default function InteractiveSimulator() {
                 <div className="space-y-4 w-full">
                   <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold animate-pulse">
                     <Radio className="w-3.5 h-3.5" />
-                    <span>Broadcasting 15-byte BLE Beacon (60s)</span>
+                    <span>Broadcasting 17-byte BLE Beacon (0xFDE1, 60s)</span>
                   </div>
 
                   {/* Live Responder ACK Counter Card */}
@@ -299,6 +299,38 @@ export default function InteractiveSimulator() {
                             ? 'A nearby person has acknowledged your alert.'
                             : 'Signal transmitting offline across nearby BLE radius.'}
                         </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Emergency Contacts Action in Simulator */}
+                  <div className="bg-white rounded-2xl p-3 border border-pink-200 text-left space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black uppercase text-pink-600 tracking-wider">
+                        Trusted Emergency Contacts
+                      </p>
+                      <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        OFFLINE CALL / SMS
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs font-semibold text-gray-700">
+                      <div>
+                        <span>Mom (Mother)</span>
+                        <span className="ml-1 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">PRIMARY</span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => alert('Dialing primary emergency contact (Mom: +91 98765 43210)...')}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold shadow-sm"
+                        >
+                          Call
+                        </button>
+                        <button
+                          onClick={() => alert('Prepared Emergency SMS with live GPS: 28.6139, 77.2090')}
+                          className="px-2.5 py-1 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-[10px] font-bold shadow-sm"
+                        >
+                          SMS
+                        </button>
                       </div>
                     </div>
                   </div>

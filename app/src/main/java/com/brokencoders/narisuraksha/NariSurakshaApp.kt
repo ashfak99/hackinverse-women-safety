@@ -27,6 +27,7 @@ class NariSurakshaApp : Application() {
     private val applicationScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     val database by lazy { AppDatabase.getDatabase(this) }
+    val emergencyContactDao by lazy { database.emergencyContactDao() }
     val preferencesRepository by lazy { UserPreferencesRepository(this) }
     val deviceIdProvider by lazy { DeviceIdProvider(this) }
     val audioRecorder by lazy { AudioRecorder(this) }
