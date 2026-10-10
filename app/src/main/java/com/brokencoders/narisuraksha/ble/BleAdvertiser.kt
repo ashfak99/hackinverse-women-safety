@@ -8,6 +8,7 @@ import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.brokencoders.narisuraksha.core.Constants
 import com.brokencoders.narisuraksha.core.PermissionHelper
@@ -18,11 +19,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * Broadcasts anonymous SOS packets over Bluetooth Low Energy (BLE).
- * Uses compact 16-bit Service UUID + 17-byte Service Data (total 25 bytes in AD structure),
- * strictly guaranteeing it fits within legacy 31-byte advertisement limits across all chipsets.
- */
 class BleAdvertiser(
     private val context: Context,
     private val externalScope: CoroutineScope = CoroutineScope(Dispatchers.Default)
@@ -37,19 +33,56 @@ class BleAdvertiser(
     private var timeoutJob: Job? = null
     private var lastPacket: SosPacket? = null
 
+    // ---------------------------------------------------------------------
+    // Session-ownership / concurrency state
+    // ---------------------------------------------------------------------
+    private val stateLock = Any()
+
+    /** Packet currently owning the (single) advertising slot — set only on start success. */
+    private var currentPacket: SosPacket? = null
+
+    /** Packet whose startAdvertising() call is in-flight — correlates callback. */
+    private var packetBeingStarted: SosPacket? = null
+
+    /** ACKs deferred because an SOS held the slot. FIFO to preserve ordering. */
+    private val pendingAcks = ArrayDeque<SosPacket>()
+
+    /** Guard against re-entering fallback on the same failure loop. */
+    private var fallbackAttempted = false
+
+    /**
+     * API 26+ chipsets jo multiple advertising sets expose karte hain.
+     * NOTE: parallel SOS+ACK path (startAdvertisingSet) abhi implement nahi hai —
+     * ye flag future extension ke liye hai. Tab tak single-session priority guard
+     * har chipset pe safe hai.
+     */
+    @Suppress("unused")
+    val supportsParallelAdvertisingSets: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                bluetoothAdapter?.isMultipleAdvertisementSupported == true
+
+    // ---------------------------------------------------------------------
+    // Callback
+    // ---------------------------------------------------------------------
     private val callback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
             super.onStartSuccess(settingsInEffect)
+
+            var startedPacket: SosPacket? = null
+            synchronized(stateLock) {
+                startedPacket = packetBeingStarted
+                currentPacket = packetBeingStarted
+                packetBeingStarted = null
+            }
+
             isAdvertising = true
             BleDiagnosticsTracker.setAdvertising(true)
             BleDiagnosticsTracker.incrementPacketsSent()
 
-            val packetDesc = if (lastPacket?.isAck == true) {
-                "ACK to #${lastPacket?.targetSenderId}"
-            } else if (lastPacket?.isTest == true) {
-                "TEST SOS #${lastPacket?.senderId}"
-            } else {
-                "DISTRESS SOS #${lastPacket?.senderId}"
+            val packetDesc = when {
+                startedPacket?.isAck == true -> "ACK to #${startedPacket?.targetSenderId}"
+                startedPacket?.isTest == true -> "TEST SOS #${startedPacket?.senderId}"
+                else -> "DISTRESS SOS #${startedPacket?.senderId}"
             }
 
             BleDiagnosticsTracker.recordEvent(
@@ -61,8 +94,17 @@ class BleAdvertiser(
 
         override fun onStartFailure(errorCode: Int) {
             super.onStartFailure(errorCode)
+
+            var failedPacket: SosPacket? = null
+            synchronized(stateLock) {
+                failedPacket = packetBeingStarted ?: currentPacket
+                currentPacket = null
+                packetBeingStarted = null
+            }
+
             isAdvertising = false
             BleDiagnosticsTracker.setAdvertising(false)
+
             val errorMsg = when (errorCode) {
                 ADVERTISE_FAILED_DATA_TOO_LARGE -> "ADVERTISE_FAILED_DATA_TOO_LARGE (Code 1)"
                 ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "ADVERTISE_FAILED_TOO_MANY_ADVERTISERS (Code 2)"
@@ -78,22 +120,35 @@ class BleAdvertiser(
             )
             Log.e(TAG, "BLE SOS Advertising failed: $errorMsg")
 
-            // Auto-recovery for physical chipsets that reject scanResponse
-            if (errorCode == ADVERTISE_FAILED_DATA_TOO_LARGE || errorCode == ADVERTISE_FAILED_INTERNAL_ERROR) {
-                lastPacket?.let { pkt ->
-                    BleDiagnosticsTracker.recordEvent(
-                        "NARI_BLE_ADVERTISE_START",
-                        "Attempting single-frame fallback advertising without scan response..."
-                    )
-                    attemptSingleFrameFallback(pkt)
-                }
+            val fp = failedPacket ?: return
+
+            val isDataOrInternalError =
+                errorCode == ADVERTISE_FAILED_DATA_TOO_LARGE ||
+                errorCode == ADVERTISE_FAILED_INTERNAL_ERROR
+
+            if (isDataOrInternalError && !fallbackAttempted) {
+                fallbackAttempted = true
+                synchronized(stateLock) { packetBeingStarted = fp }
+                BleDiagnosticsTracker.recordEvent(
+                    "NARI_BLE_ADVERTISE_START",
+                    "Attempting single-frame fallback advertising without scan response..."
+                )
+                attemptSingleFrameFallback(fp)
+                return
+            }
+
+            // SOS slot released via failure → drain one queued ACK.
+            if (fp.isSos) {
+                drainPendingAcks()
             }
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Start
+    // ---------------------------------------------------------------------
     @SuppressLint("MissingPermission")
     fun startAdvertising(packet: SosPacket, timeoutMs: Long = Constants.SOS_ADVERTISE_TIMEOUT_MS) {
-        lastPacket = packet
 
         if (!PermissionHelper.hasBluetoothAdvertisePermission(context)) {
             val msg = "Missing BLUETOOTH_ADVERTISE permission"
@@ -110,13 +165,42 @@ class BleAdvertiser(
             return
         }
 
-        stopAdvertising()
+        // Priority guard — SOS > ACK on single-session chipsets.
+        synchronized(stateLock) {
+            val occupying = currentPacket ?: packetBeingStarted
+            if (occupying?.isSos == true && packet.isAck) {
+                Log.w(
+                    TAG,
+                    "ACK deferred: active SOS has priority " +
+                            "(queued=${pendingAcks.size + 1}, target=#${packet.targetSenderId})"
+                )
+                pendingAcks.addLast(packet)
+                BleDiagnosticsTracker.recordEvent(
+                    "NARI_BLE_ACK_DEFERRED",
+                    "ACK for #${packet.targetSenderId} deferred behind active SOS #${occupying.senderId}"
+                )
+                return
+            }
+        }
+
+        // Slot swap. flushPendingAcks=false — warna recursion ho jayega.
+        stopAdvertisingInternal(flushPendingAcks = false)
+
+        lastPacket = packet
+        synchronized(stateLock) { packetBeingStarted = packet }
+        fallbackAttempted = false
 
         advertiser = adapter.bluetoothLeAdvertiser
         if (advertiser == null) {
             val msg = "BLE Advertising not supported on this device chipset"
             BleDiagnosticsTracker.recordEvent("NARI_BLE_ADVERTISE_FAILURE", msg, isError = true)
             Log.e(TAG, msg)
+            synchronized(stateLock) {
+                packetBeingStarted = null
+                currentPacket = null
+            }
+            // SOS slot free hua → queued ACK ko chance do
+            if (packet.isSos) drainPendingAcks()
             return
         }
 
@@ -124,18 +208,17 @@ class BleAdvertiser(
         val logTag = if (packet.isAck) "NARI_BLE_ACK_SENT" else "NARI_BLE_ADVERTISE_START"
         BleDiagnosticsTracker.recordEvent(
             logTag,
-            "Broadcasting packet: senderId=#${packet.senderId}, ack=${packet.isAck}, test=${packet.isTest}, target=#${packet.targetSenderId}, bytes=${encodedPacket.size}"
+            "Broadcasting packet: senderId=#${packet.senderId}, ack=${packet.isAck}, " +
+                    "test=${packet.isTest}, target=#${packet.targetSenderId}, bytes=${encodedPacket.size}"
         )
 
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .setConnectable(false)
-            .setTimeout(0) // handled by coroutine timeout
+            .setTimeout(0)
             .build()
 
-        // AD Record 1 (16-bit Service UUID: 4 bytes) + AD Record 2 (16-bit Service Data: 21 bytes) = 25 bytes total.
-        // Easily fits inside 31-byte legacy advertising packet limit without chipset truncation.
         val data = AdvertiseData.Builder()
             .addServiceUuid(Constants.SOS_PARCEL_UUID)
             .addServiceData(Constants.SOS_PARCEL_UUID, encodedPacket)
@@ -143,7 +226,6 @@ class BleAdvertiser(
             .setIncludeTxPowerLevel(false)
             .build()
 
-        // Scan response adds manufacturer data fallback
         val scanResponse = AdvertiseData.Builder()
             .addManufacturerData(Constants.MANUFACTURER_ID, encodedPacket)
             .setIncludeDeviceName(false)
@@ -153,21 +235,46 @@ class BleAdvertiser(
             advertiser?.startAdvertising(settings, data, scanResponse, callback)
             Log.i(TAG, "Initiated BLE advertising for packet: $packet (${encodedPacket.size} bytes)")
 
-            // Schedule auto-stop
             timeoutJob?.cancel()
             timeoutJob = externalScope.launch {
                 delay(timeoutMs)
-                BleDiagnosticsTracker.recordEvent("NARI_BLE_ADVERTISE_START", "Advertising timeout (${timeoutMs / 1000}s) reached. Stopping.")
+                BleDiagnosticsTracker.recordEvent(
+                    "NARI_BLE_ADVERTISE_START",
+                    "Advertising timeout (${timeoutMs / 1000}s) reached. Stopping."
+                )
                 stopAdvertising()
             }
         } catch (e: Exception) {
-            BleDiagnosticsTracker.recordEvent("NARI_BLE_ADVERTISE_FAILURE", "Exception: ${e.message}", isError = true)
+            BleDiagnosticsTracker.recordEvent(
+                "NARI_BLE_ADVERTISE_FAILURE", "Exception: ${e.message}", isError = true
+            )
             Log.e(TAG, "Exception starting BLE advertisement", e)
+            synchronized(stateLock) {
+                currentPacket = null
+                packetBeingStarted = null
+            }
+            if (packet.isSos) drainPendingAcks()
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Fallback
+    // ---------------------------------------------------------------------
     @SuppressLint("MissingPermission")
     private fun attemptSingleFrameFallback(packet: SosPacket) {
+        val adv = advertiser
+        if (adv == null) {
+            // Silent no-op avoid — callback fire hi nahi hota warna
+            BleDiagnosticsTracker.recordEvent(
+                "NARI_BLE_ADVERTISE_FAILURE",
+                "Fallback skipped: advertiser unavailable",
+                isError = true
+            )
+            synchronized(stateLock) { packetBeingStarted = null }
+            if (packet.isSos) drainPendingAcks()
+            return
+        }
+
         try {
             val encodedPacket = PacketCodec.encode(packet)
             val settings = AdvertiseSettings.Builder()
@@ -181,21 +288,44 @@ class BleAdvertiser(
                 .setIncludeDeviceName(false)
                 .build()
 
-            advertiser?.startAdvertising(settings, data, callback)
+            adv.startAdvertising(settings, data, callback)
         } catch (e: Exception) {
-            BleDiagnosticsTracker.recordEvent("NARI_BLE_ADVERTISE_FAILURE", "Fallback attempt failed: ${e.message}", isError = true)
+            BleDiagnosticsTracker.recordEvent(
+                "NARI_BLE_ADVERTISE_FAILURE",
+                "Fallback attempt failed: ${e.message}",
+                isError = true
+            )
+            synchronized(stateLock) { packetBeingStarted = null }
+            if (packet.isSos) drainPendingAcks()
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Stop
+    // ---------------------------------------------------------------------
     @SuppressLint("MissingPermission")
     fun stopAdvertising() {
+        stopAdvertisingInternal(flushPendingAcks = true)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun stopAdvertisingInternal(flushPendingAcks: Boolean) {
         timeoutJob?.cancel()
         timeoutJob = null
+
+        var wasSos = false
+        synchronized(stateLock) {
+            wasSos = (currentPacket ?: packetBeingStarted)?.isSos == true
+            currentPacket = null
+            packetBeingStarted = null
+        }
 
         if (isAdvertising && advertiser != null) {
             try {
                 advertiser?.stopAdvertising(callback)
-                BleDiagnosticsTracker.recordEvent("NARI_BLE_ADVERTISE_START", "BLE SOS Advertising stopped")
+                BleDiagnosticsTracker.recordEvent(
+                    "NARI_BLE_ADVERTISE_START", "BLE SOS Advertising stopped"
+                )
                 Log.i(TAG, "BLE SOS Advertising stopped")
             } catch (e: Exception) {
                 Log.e(TAG, "Exception stopping BLE advertisement", e)
@@ -203,6 +333,28 @@ class BleAdvertiser(
         }
         isAdvertising = false
         BleDiagnosticsTracker.setAdvertising(false)
+
+        if (flushPendingAcks && wasSos) {
+            drainPendingAcks()
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Queue drain
+    // ---------------------------------------------------------------------
+    private fun drainPendingAcks() {
+        val next: SosPacket? = synchronized(stateLock) {
+            pendingAcks.removeFirstOrNull()
+        } ?: return
+
+        Log.i(TAG, "Draining deferred ACK for #${next.targetSenderId} (remaining=${pendingAcks.size})")
+        BleDiagnosticsTracker.recordEvent(
+            "NARI_BLE_ACK_DRAINED",
+            "Flushing deferred ACK for #${next.targetSenderId}"
+        )
+        // Recursion safe: startAdvertising → stopAdvertisingInternal(false) →
+        // guard passes (slot empty) → advertiser actually starts.
+        startAdvertising(next)
     }
 
     companion object {

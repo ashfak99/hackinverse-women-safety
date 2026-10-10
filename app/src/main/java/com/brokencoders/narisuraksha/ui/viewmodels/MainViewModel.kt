@@ -99,6 +99,10 @@ class MainViewModel(
     // Tracks unique responder IDs who have acknowledged this device's current SOS beacon
     private val acknowledgedResponders = mutableSetOf<Short>()
 
+    // Tracks ACKs WE sent recently, keyed by targetSenderId — dedupes retransmitted
+    // SOS packets so the BLE advertising queue doesn't get flooded with identical ACKs.
+    private val recentAckTargets = mutableMapOf<Short, Long>()
+
     private val _isFlashlightOn = MutableStateFlow(false)
     val isFlashlightOn: StateFlow<Boolean> = _isFlashlightOn.asStateFlow()
 
@@ -226,10 +230,39 @@ class MainViewModel(
         _responderAckCount.value = 0
         sosManager.stopSos()
         SosForegroundService.stop(context)
+
+        // BleAdvertiser internally flushes any deferred ACKs when the SOS slot frees up.
+        BleDiagnosticsTracker.recordEvent(
+            "NARI_BLE_ACK_DRAINED",
+            "SOS stopped — deferred ACKs (if any) will flush via BleAdvertiser"
+        )
     }
 
+    /**
+     * Sends an ACK beacon addressed to [targetSenderId].
+     *
+     * Deduped via [recentAckTargets] because a single SOS advertisement can be
+     * received multiple times as the chipset retransmits it. Without dedup, the
+     * BleAdvertiser pending-ACK queue would fill with identical entries.
+     *
+     * Routed through [bleAdvertiser] (not bleTransport) so the SOS-priority guard
+     * applies — an active SOS broadcast will NOT be replaced by this ACK.
+     */
     fun sendResponderAck(targetSenderId: Short) {
+        val now = System.currentTimeMillis()
+
+        val lastAck = recentAckTargets[targetSenderId]
+        if (lastAck != null && now - lastAck < ACK_COOLDOWN_MS) {
+            Log.d(TAG, "ACK to #$targetSenderId skipped (cooldown ${now - lastAck}ms)")
+            return
+        }
+        recentAckTargets[targetSenderId] = now
+
+        // Opportunistic pruning so the map doesn't grow unbounded
+        recentAckTargets.entries.removeAll { now - it.value > ACK_COOLDOWN_MS * 4 }
+
         Log.i(TAG, "Sending responder ACK beacon targeting sender #$targetSenderId")
+
         val ackPacket = SosPacket.create(
             senderId = deviceIdProvider.deviceId,
             lat = null,
@@ -237,7 +270,13 @@ class MainViewModel(
             isAck = true,
             targetSenderId = targetSenderId
         )
-        bleTransport.startAdvertising(ackPacket)
+
+        bleAdvertiser.startAdvertising(ackPacket, timeoutMs = ACK_ADVERTISE_TIMEOUT_MS)
+
+        BleDiagnosticsTracker.recordEvent(
+            "NARI_BLE_ACK_SENT",
+            "ACK queued/dispatched for target #$targetSenderId"
+        )
     }
 
     /**
@@ -407,12 +446,10 @@ class MainViewModel(
             if (!enabled) {
                 ScanForegroundService.stop(context)
                 return@launch
-            } 
-            if(PermissionHelper.hasBluetoothPermissions(context))
-            {
-                ScanForegroundService.start(context)
             }
-            else{
+            if (PermissionHelper.hasBluetoothPermissions(context)) {
+                ScanForegroundService.start(context)
+            } else {
                 Log.w(TAG, "Guardian scan not started: Bluetooth permissions missing")
             }
         }
@@ -467,6 +504,12 @@ class MainViewModel(
 
     companion object {
         private const val TAG = "MainViewModel"
+
+        /** How long an ACK slot is held before auto-stopping (fire-and-forget). */
+        private const val ACK_ADVERTISE_TIMEOUT_MS = 3_000L
+
+        /** Skip sending another ACK to the same target within this window. */
+        private const val ACK_COOLDOWN_MS = 3_000L
 
         fun provideFactory(
             context: Context,
