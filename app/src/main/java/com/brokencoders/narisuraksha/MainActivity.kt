@@ -21,6 +21,11 @@ import com.brokencoders.narisuraksha.ui.navigation.Screen
 import com.brokencoders.narisuraksha.ui.theme.NariSurakshaTheme
 import com.brokencoders.narisuraksha.ui.viewmodels.HistoryViewModel
 import com.brokencoders.narisuraksha.ui.viewmodels.MainViewModel
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import com.brokencoders.narisuraksha.core.PermissionHelper
+import com.brokencoders.narisuraksha.service.ScanForegroundService
 
 class MainActivity : ComponentActivity() {
 
@@ -117,6 +122,21 @@ class MainActivity : ComponentActivity() {
             val rssi = intent.getIntExtra("RSSI", -70)
 
             navController.navigate(Screen.Alert.createRoute(senderId, lat, lon, rssi))
+        }
+    }
+
+    override fun onResume()
+    {
+        super.onResume()
+        if(PermissionHelper.hasBluetoothPermissions(this))
+        {
+            lifecycleScore.launch{
+                val enabled = app.preferencesRepository.isGuardianScanEnabled.first()
+                if(enabled)
+                {
+                    ScanForegroundService.start(this@MainActivity)
+                }
+            }
         }
     }
 }

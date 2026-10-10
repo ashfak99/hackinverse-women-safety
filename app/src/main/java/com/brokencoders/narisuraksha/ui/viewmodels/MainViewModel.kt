@@ -404,10 +404,16 @@ class MainViewModel(
     fun setGuardianScanEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setGuardianScanEnabled(enabled)
-            if (enabled) {
-                ScanForegroundService.start(context)
-            } else {
+            if (!enabled) {
                 ScanForegroundService.stop(context)
+                return@launch
+            } 
+            if(PermissionHelper.hasBluetoothPermissions(context))
+            {
+                ScanForegroundService.start(context)
+            }
+            else{
+                Log.w(TAG, "Guardian scan not started: Bluetooth permissions missing")
             }
         }
     }
