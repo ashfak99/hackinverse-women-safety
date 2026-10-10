@@ -37,8 +37,11 @@ fun NariSurakshaNavGraph(
                 onComplete = { customPin ->
                     mainViewModel.updateSecretDecoyCode(customPin)
                     mainViewModel.setOnboardingCompleted(true)
+                    mainViewModel.setGuardianScanEnabled(true)
                     navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Onboarding.route) { inclusive = true }
+                        popUpTo(Screen.Onboarding.route) {
+                            inclusive = true 
+                        }
                     }
                 }
             )
