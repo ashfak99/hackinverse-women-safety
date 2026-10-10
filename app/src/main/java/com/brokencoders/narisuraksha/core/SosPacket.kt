@@ -27,6 +27,14 @@ data class SosPacket(
     val isTest: Boolean get() = (flags.toInt() and FLAG_TEST) != 0
 
     /**
+     * True only if this packet carries a usable location fix.
+     * Consumers MUST check this before trusting [lat]/[lon].
+     * When false, [lat]/[lon] are placeholder (0,0) and MUST be ignored.
+     */
+    val hasUsableLocation: Boolean
+        get() = !isLocationUnavailable
+
+    /**
      * In an ACK beacon, the [timestamp] field carries the targeted original sender's ID.
      * Returns 0 for broadcast ACK (target == 0) or for non-ACK packets.
      */
@@ -38,6 +46,27 @@ data class SosPacket(
         const val FLAG_LOCATION_UNAVAILABLE: Int = 1 shl 1
         const val FLAG_ACK: Int = 1 shl 2
         const val FLAG_TEST: Int = 1 shl 3
+
+        private const val LAT_MIN = -90.0
+        private const val LAT_MAX = 90.0
+        private const val LON_MIN = -180.0
+        private const val LON_MAX = 180.0
+
+        /**
+         * A coordinate is considered plausible only if it is:
+         *  - not NaN / Infinity
+         *  - inside valid lat/lon range
+         *  - not the "Null Island" (0,0) sentinel, which is what un-locked GPS
+         *    receivers commonly report and is never a real fix in our target region.
+         */
+        private fun isPlausibleLocation(lat: Double, lon: Double): Boolean {
+            if (lat.isNaN() || lon.isNaN()) return false
+            if (lat.isInfinite() || lon.isInfinite()) return false
+            if (lat !in LAT_MIN..LAT_MAX) return false
+            if (lon !in LON_MIN..LON_MAX) return false
+            if (lat == 0.0 && lon == 0.0) return false
+            return true
+        }
 
         fun create(
             senderId: Short,
@@ -66,9 +95,10 @@ data class SosPacket(
             }
 
             // ---- Coordinates ----
+            // Reject null, NaN, out-of-range, and Null Island. Flag is set on any failure.
             val finalLat: Float
             val finalLon: Float
-            if (lat != null && lon != null) {
+            if (lat != null && lon != null && isPlausibleLocation(lat, lon)) {
                 finalLat = lat.toFloat()
                 finalLon = lon.toFloat()
             } else {
