@@ -12,22 +12,26 @@ package com.brokencoders.narisuraksha.core
  * - lon: 4 bytes
  * - flags: 1 byte
  *
- * (Also backwards-compatible with legacy 15-byte un-versioned packets).
+ * (Also backwards-compatible with legacy 15-byte un-versioned packets.)
  */
 data class SosPacket(
     val senderId: Short,     // random anonymous ID generated at first launch
     val timestamp: Int,      // epoch seconds for distress; or targetSenderId for ACK
     val lat: Float,
     val lon: Float,
-    val flags: Byte          // bit0 = SOS, bit1 = location unavailable, bit2 = ACK
+    val flags: Byte,
 ) {
     val isSos: Boolean get() = (flags.toInt() and FLAG_SOS) != 0
     val isLocationUnavailable: Boolean get() = (flags.toInt() and FLAG_LOCATION_UNAVAILABLE) != 0
     val isAck: Boolean get() = (flags.toInt() and FLAG_ACK) != 0
     val isTest: Boolean get() = (flags.toInt() and FLAG_TEST) != 0
 
-    // In an ACK beacon, the timestamp field carries the targeted original sender's ID
-    val targetSenderId: Short get() = if (isAck) (timestamp and 0xFFFF).toShort() else 0
+    /**
+     * In an ACK beacon, the [timestamp] field carries the targeted original sender's ID.
+     * Returns 0 for broadcast ACK (target == 0) or for non-ACK packets.
+     */
+    val targetSenderId: Short
+        get() = if (isAck) (timestamp and 0xFFFF).toShort() else 0
 
     companion object {
         const val FLAG_SOS: Int = 1 shl 0
@@ -44,15 +48,24 @@ data class SosPacket(
             targetSenderId: Short = 0,
             isTest: Boolean = false
         ): SosPacket {
+            // ---- Flags ----
+            // ACK wins over TEST when both are set (test ACK is still an ACK,
+            // and must be routable via targetSenderId).
             var flagAccumulator = 0
-            if (isTest) {
-                flagAccumulator = flagAccumulator or FLAG_TEST
-            } else if (!isAck) {
-                flagAccumulator = flagAccumulator or FLAG_SOS
-            } else {
-                flagAccumulator = flagAccumulator or FLAG_ACK
+            when {
+                isAck -> {
+                    flagAccumulator = flagAccumulator or FLAG_ACK
+                    if (isTest) flagAccumulator = flagAccumulator or FLAG_TEST
+                }
+                isTest -> {
+                    flagAccumulator = flagAccumulator or FLAG_TEST
+                }
+                else -> {
+                    flagAccumulator = flagAccumulator or FLAG_SOS
+                }
             }
 
+            // ---- Coordinates ----
             val finalLat: Float
             val finalLon: Float
             if (lat != null && lon != null) {
@@ -64,7 +77,11 @@ data class SosPacket(
                 flagAccumulator = flagAccumulator or FLAG_LOCATION_UNAVAILABLE
             }
 
-            val finalTimestamp = if (isAck && targetSenderId != 0.toShort()) {
+            // ---- Timestamp field ----
+            // For ACK packets the timestamp slot ALWAYS carries targetSenderId,
+            // including 0 (= broadcast ACK). Otherwise decoding would round-trip
+            // a real epoch value into a garbage Short and silently drop the ACK.
+            val finalTimestamp = if (isAck) {
                 targetSenderId.toInt() and 0xFFFF
             } else {
                 timestampSeconds
