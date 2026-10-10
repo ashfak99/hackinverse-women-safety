@@ -11,8 +11,6 @@ object Constants {
     val SOS_SERVICE_UUID: UUID = UUID.fromString("0000FDE1-0000-1000-8000-00805F9B34FB")
     val SOS_PARCEL_UUID: ParcelUuid = ParcelUuid(SOS_SERVICE_UUID)
 
-    // Fallback 128-bit UUID for backwards compatibility
-    val SOS_LEGACY_128_UUID: UUID = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66")
 
     // Legacy fallback manufacturer ID
     const val MANUFACTURER_ID = 0xFFFF
