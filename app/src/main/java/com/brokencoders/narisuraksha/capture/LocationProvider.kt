@@ -21,7 +21,22 @@ data class Coordinates(
     val lon: Double,
     val accuracy: Float? = null,
     val timestamp: Long = System.currentTimeMillis()
-)
+) {
+    init {
+        require(!lat.isNaN() && !lon.isNaN()) { "Coordinates cannot contain NaN" }
+        require(!lat.isInfinite() && !lon.isInfinite()) { "Coordinates cannot be infinite" }
+        require(lat in -90.0..90.0) { "Latitude out of range: $lat" }
+        require(lon in -180.0..180.0) { "Longitude out of range: $lon" }
+    }
+
+    /**
+     * A coordinate is usable only if it isn't the Null Island (0,0) sentinel.
+     * A real fix at exactly (0,0) is practically impossible in our operating region
+     * and is overwhelmingly reported by GPS receivers that haven't locked yet.
+     */
+    val isUsable: Boolean
+        get() = !(lat == 0.0 && lon == 0.0)
+}
 
 interface LocationCoordinateProvider {
     suspend fun getCurrentLocation(): Coordinates?
@@ -68,13 +83,10 @@ class LocationProvider(private val context: Context) : LocationCoordinateProvide
                 }
             }
 
-            if (currentLocation != null) {
-                Log.i(TAG, "Acquired fresh GPS location: lat=${currentLocation.latitude}, lon=${currentLocation.longitude}, acc=${currentLocation.accuracy}m")
-                val coords = Coordinates(
-                    lat = currentLocation.latitude,
-                    lon = currentLocation.longitude,
-                    accuracy = currentLocation.accuracy,
-                    timestamp = currentLocation.time
+            buildCoordinates(currentLocation)?.let { coords ->
+                Log.i(
+                    TAG,
+                    "Acquired fresh GPS location: lat=${coords.lat}, lon=${coords.lon}, acc=${coords.accuracy}m"
                 )
                 _currentCoordinates.value = coords
                 return@withContext coords
@@ -82,24 +94,67 @@ class LocationProvider(private val context: Context) : LocationCoordinateProvide
 
             // Strategy 2: Fast fallback to last known location (1.0s timeout)
             Log.d(TAG, "Attempting fast fallback to last known location...")
-            val lastLocationTask = fusedLocationClient.lastLocation
-            val lastLoc: Location? = Tasks.await(lastLocationTask, 1000, TimeUnit.MILLISECONDS)
-            if (lastLoc != null) {
-                Log.i(TAG, "Using last known GPS location: lat=${lastLoc.latitude}, lon=${lastLoc.longitude}, acc=${lastLoc.accuracy}m")
-                val coords = Coordinates(
-                    lat = lastLoc.latitude,
-                    lon = lastLoc.longitude,
-                    accuracy = lastLoc.accuracy,
-                    timestamp = lastLoc.time
+            val lastLoc: Location? = try {
+                Tasks.await(fusedLocationClient.lastLocation, 1000, TimeUnit.MILLISECONDS)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed getting last known location: ${e.message}")
+                null
+            }
+
+            buildCoordinates(lastLoc)?.let { coords ->
+                Log.i(
+                    TAG,
+                    "Using last known GPS location: lat=${coords.lat}, lon=${coords.lon}, acc=${coords.accuracy}m"
                 )
                 _currentCoordinates.value = coords
                 return@withContext coords
             }
 
-            Log.w(TAG, "No GPS location available offline. Returning null (FLAG_LOCATION_UNAVAILABLE).")
+            Log.w(TAG, "No usable GPS location available offline. Returning null (FLAG_LOCATION_UNAVAILABLE).")
             null
         } catch (e: Exception) {
             Log.e(TAG, "Error acquiring location", e)
+            null
+        }
+    }
+
+    /**
+     * Converts a raw [Location] into validated [Coordinates], returning null if the
+     * fix is implausible (null, NaN, out of range, or Null Island). Callers receiving
+     * null should propagate FLAG_LOCATION_UNAVAILABLE via SosPacket.create().
+     */
+    private fun buildCoordinates(loc: Location?): Coordinates? {
+        if (loc == null) return null
+
+        val lat = loc.latitude
+        val lon = loc.longitude
+
+        if (lat.isNaN() || lon.isNaN()) {
+            Log.w(TAG, "Rejecting NaN coordinates")
+            return null
+        }
+        if (lat.isInfinite() || lon.isInfinite()) {
+            Log.w(TAG, "Rejecting infinite coordinates")
+            return null
+        }
+        if (lat !in -90.0..90.0 || lon !in -180.0..180.0) {
+            Log.w(TAG, "Rejecting out-of-range coordinates: lat=$lat, lon=$lon")
+            return null
+        }
+        if (lat == 0.0 && lon == 0.0) {
+            Log.w(TAG, "Rejecting Null Island (0,0) fix")
+            return null
+        }
+
+        return try {
+            Coordinates(
+                lat = lat,
+                lon = lon,
+                accuracy = loc.accuracy,
+                timestamp = loc.time
+            )
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Rejecting invalid coordinates: ${e.message}")
             null
         }
     }

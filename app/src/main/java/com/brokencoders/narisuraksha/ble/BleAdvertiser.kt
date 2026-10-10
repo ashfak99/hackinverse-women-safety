@@ -1,4 +1,3 @@
-
 package com.brokencoders.narisuraksha.ble
 
 import android.annotation.SuppressLint
@@ -7,9 +6,6 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
-import android.bluetooth.le.AdvertisingSet
-import android.bluetooth.le.AdvertisingSetCallback
-import android.bluetooth.le.AdvertisingSetParameters
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.os.Build
@@ -23,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class BleAdvertiser(
     private val context: Context,
@@ -30,12 +27,8 @@ class BleAdvertiser(
 ) {
     private val bluetoothManager =
         context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-
-    private val bluetoothAdapter: BluetoothAdapter?
-        get() = bluetoothManager?.adapter
-
+    private val bluetoothAdapter: BluetoothAdapter? get() = bluetoothManager?.adapter
     private var advertiser: BluetoothLeAdvertiser? = null
-    private var extendedSet: AdvertisingSet? = null
 
     var isAdvertising = false
         private set
@@ -43,114 +36,42 @@ class BleAdvertiser(
     private var timeoutJob: Job? = null
     private var lastPacket: SosPacket? = null
 
+    // ---------------------------------------------------------------------
+    // Session-ownership / concurrency state
+    // ---------------------------------------------------------------------
     private val stateLock = Any()
+
+    /** Packet currently owning the (single) advertising slot — set only on start success. */
     private var currentPacket: SosPacket? = null
+
+    /** Packet whose startAdvertising() call is in-flight — correlates callback. */
     private var packetBeingStarted: SosPacket? = null
+
+    /** ACKs deferred because an SOS held the slot. FIFO to preserve ordering. */
     private val pendingAcks = ArrayDeque<SosPacket>()
 
-    private var fallbackTier = 0
-    private var activeExtendedAdvertising = false
-
-    val supportsParallelAdvertisingSets: Boolean
-        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            bluetoothAdapter?.isLeExtendedAdvertisingSupported == true &&
-            bluetoothAdapter?.isMultipleAdvertisementSupported == true
-
-    private companion object {
-        const val TAG = "BleAdvertiser"
-
-        const val LEGACY_ADVERTISING_LIMIT = 31
-        const val FLAGS_AD_STRUCTURE_SIZE = 3
-
-        const val AD_TYPE_SERVICE_DATA_16_BIT = 0x16
-        const val AD_TYPE_MANUFACTURER_DATA = 0xFF
-
-        const val TIER_FULL = 1
-        const val TIER_SERVICE_ONLY = 2
-        const val TIER_MANUFACTURER_ONLY = 3
-        const val TIER_MINIMAL = 4
-        const val TIER_EXTENDED = 5
-    }
+    /** Guard against re-entering fallback on the same failure loop. */
+    private var fallbackAttempted = false
 
     /**
-     * Includes the AD length byte, AD type byte, and field identifier.
+     * API 26+ chipsets jo multiple advertising sets expose karte hain.
+     * NOTE: parallel SOS+ACK path (startAdvertisingSet) abhi implement nahi hai —
+     * ye flag future extension ke liye hai. Tab tak single-session priority guard
+     * har chipset pe safe hai.
      */
-    private fun calculateAdStructureSize(
-        uuid: ParcelUuid?,
-        payload: ByteArray,
-        type: Int
-    ): Int {
-        val identifierSize = when (type) {
-            AD_TYPE_SERVICE_DATA_16_BIT -> 2
-            AD_TYPE_MANUFACTURER_DATA -> 2
-            else -> 0
-        }
-
-        return 1 + 1 + identifierSize + payload.size
-    }
-
-    private fun recordSize(
-        tier: Int,
-        packetSize: Int,
-        mainSize: Int,
-        scanResponseSize: Int = 0
-    ) {
-        Log.d(
-            TAG,
-            "tier=$tier packet=$packetSize bytes, " +
-                "advertising=$mainSize/$LEGACY_ADVERTISING_LIMIT bytes, " +
-                "scanResponse=$scanResponseSize/$LEGACY_ADVERTISING_LIMIT bytes"
-        )
-    }
-
-    private fun recordFailure(message: String) {
-        BleDiagnosticsTracker.recordEvent(
-            "NARI_BLE_ADVERTISE_FAILURE",
-            message,
-            isError = true
-        )
-        Log.e(TAG, message)
-    }
-
-    private fun makeServiceData(payload: ByteArray): AdvertiseData =
-        AdvertiseData.Builder()
-            .addServiceData(Constants.SOS_PARCEL_UUID, payload)
-            .setIncludeDeviceName(false)
-            .setIncludeTxPowerLevel(false)
-            .build()
-
-    private fun makeManufacturerData(payload: ByteArray): AdvertiseData =
-        AdvertiseData.Builder()
-            .addManufacturerData(Constants.MANUFACTURER_ID, payload)
-            .setIncludeDeviceName(false)
-            .setIncludeTxPowerLevel(false)
-            .build()
-
-    private fun makeSettings(): AdvertiseSettings =
-        AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .setConnectable(false)
-            .setTimeout(0)
-            .build()
-
-    private fun makeExtendedData(payload: ByteArray): AdvertiseData =
-        AdvertiseData.Builder()
-            .addServiceData(Constants.SOS_PARCEL_UUID, payload)
-            .setIncludeDeviceName(false)
-            .setIncludeTxPowerLevel(false)
-            .build()
+    @Suppress("unused")
+    val supportsParallelAdvertisingSets: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                bluetoothAdapter?.isMultipleAdvertisementSupported == true
 
     // ---------------------------------------------------------------------
-    // Legacy advertising callback
+    // Callback
     // ---------------------------------------------------------------------
-
     private val callback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
             super.onStartSuccess(settingsInEffect)
 
-            val startedPacket: SosPacket?
-
+            var startedPacket: SosPacket? = null
             synchronized(stateLock) {
                 startedPacket = packetBeingStarted
                 currentPacket = packetBeingStarted
@@ -161,30 +82,23 @@ class BleAdvertiser(
             BleDiagnosticsTracker.setAdvertising(true)
             BleDiagnosticsTracker.incrementPacketsSent()
 
-            val description = when {
-                startedPacket?.isAck == true ->
-                    "ACK to #${startedPacket.targetSenderId}"
-
-                startedPacket?.isTest == true ->
-                    "TEST SOS #${startedPacket.senderId}"
-
-                else ->
-                    "DISTRESS SOS #${startedPacket?.senderId}"
+            val packetDesc = when {
+                startedPacket?.isAck == true -> "ACK to #${startedPacket?.targetSenderId}"
+                startedPacket?.isTest == true -> "TEST SOS #${startedPacket?.senderId}"
+                else -> "DISTRESS SOS #${startedPacket?.senderId}"
             }
 
             BleDiagnosticsTracker.recordEvent(
                 "NARI_BLE_ADVERTISE_SUCCESS",
-                "BLE broadcast active: $description, tier=$fallbackTier"
+                "BLE Broadcast active [$packetDesc] (LowLatency, HighTx)"
             )
-
-            Log.i(TAG, "Advertising started: $description, tier=$fallbackTier")
+            Log.i(TAG, "BLE SOS Advertising started successfully: $packetDesc")
         }
 
         override fun onStartFailure(errorCode: Int) {
             super.onStartFailure(errorCode)
 
-            val failedPacket: SosPacket?
-
+            var failedPacket: SosPacket? = null
             synchronized(stateLock) {
                 failedPacket = packetBeingStarted ?: currentPacket
                 currentPacket = null
@@ -194,443 +108,330 @@ class BleAdvertiser(
             isAdvertising = false
             BleDiagnosticsTracker.setAdvertising(false)
 
-            recordFailure(
-                "Legacy advertising failed: error=$errorCode, tier=$fallbackTier"
+            val errorMsg = when (errorCode) {
+                ADVERTISE_FAILED_DATA_TOO_LARGE -> "ADVERTISE_FAILED_DATA_TOO_LARGE (Code 1)"
+                ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "ADVERTISE_FAILED_TOO_MANY_ADVERTISERS (Code 2)"
+                ADVERTISE_FAILED_ALREADY_STARTED -> "ADVERTISE_FAILED_ALREADY_STARTED (Code 3)"
+                ADVERTISE_FAILED_INTERNAL_ERROR -> "ADVERTISE_FAILED_INTERNAL_ERROR (Code 4)"
+                ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "ADVERTISE_FAILED_FEATURE_UNSUPPORTED (Code 5)"
+                else -> "Error Code $errorCode"
+            }
+            BleDiagnosticsTracker.recordEvent(
+                "NARI_BLE_ADVERTISE_FAILURE",
+                "BLE Advertising failed: $errorMsg",
+                isError = true
             )
+            Log.e(TAG, "BLE SOS Advertising failed: $errorMsg")
 
-            if (failedPacket != null) {
-                startNextTier(failedPacket)
+            val fp = failedPacket ?: return
+
+            val isDataOrInternalError =
+                errorCode == ADVERTISE_FAILED_DATA_TOO_LARGE ||
+                errorCode == ADVERTISE_FAILED_INTERNAL_ERROR
+
+            if (isDataOrInternalError && !fallbackAttempted) {
+                fallbackAttempted = true
+                synchronized(stateLock) { packetBeingStarted = fp }
+                BleDiagnosticsTracker.recordEvent(
+                    "NARI_BLE_ADVERTISE_START",
+                    "Attempting minimal single-frame fallback (service data only)..."
+                )
+                attemptMinimalFallback(fp)
+                return
+            }
+
+            // SOS slot released via failure → drain one queued ACK.
+            if (fp.isSos) {
+                drainPendingAcks()
             }
         }
     }
 
     // ---------------------------------------------------------------------
-    // Extended advertising callback (API 26+)
+    // Start
     // ---------------------------------------------------------------------
-
-    private val extendedCallback =
-        object : AdvertisingSetCallback() {
-
-            override fun onAdvertisingSetStarted(
-                advertisingSet: AdvertisingSet?,
-                txPower: Int,
-                status: Int
-            ) {
-                super.onAdvertisingSetStarted(advertisingSet, txPower, status)
-
-                if (status == ADVERTISE_SUCCESS && advertisingSet != null) {
-                    extendedSet = advertisingSet
-
-                    synchronized(stateLock) {
-                        currentPacket = packetBeingStarted
-                        packetBeingStarted = null
-                    }
-
-                    isAdvertising = true
-                    activeExtendedAdvertising = true
-
-                    BleDiagnosticsTracker.setAdvertising(true)
-                    BleDiagnosticsTracker.incrementPacketsSent()
-                    BleDiagnosticsTracker.recordEvent(
-                        "NARI_BLE_EXTENDED_ADV_START",
-                        "Extended advertising started, txPower=$txPower"
-                    )
-
-                    Log.i(TAG, "Extended advertising started")
-                } else {
-                    val failedPacket: SosPacket?
-
-                    synchronized(stateLock) {
-                        failedPacket = packetBeingStarted ?: currentPacket
-                        packetBeingStarted = null
-                        currentPacket = null
-                    }
-
-                    extendedSet = null
-                    activeExtendedAdvertising = false
-                    isAdvertising = false
-                    BleDiagnosticsTracker.setAdvertising(false)
-
-                    recordFailure(
-                        "Extended advertising failed: status=$status"
-                    )
-
-                    if (failedPacket != null) {
-                        finishFailure(failedPacket)
-                    }
-                }
-            }
-
-            override fun onAdvertisingSetStopped(advertisingSet: AdvertisingSet?) {
-                super.onAdvertisingSetStopped(advertisingSet)
-
-                extendedSet = null
-                activeExtendedAdvertising = false
-                isAdvertising = false
-                BleDiagnosticsTracker.setAdvertising(false)
-
-                Log.i(TAG, "Extended advertising stopped")
-            }
-        }
-
-    // ---------------------------------------------------------------------
-    // Start advertising
-    // ---------------------------------------------------------------------
-
     @SuppressLint("MissingPermission")
-    fun startAdvertising(
-        packet: SosPacket,
-        timeoutMs: Long = Constants.SOS_ADVERTISE_TIMEOUT_MS
-    ) {
+    fun startAdvertising(packet: SosPacket, timeoutMs: Long = Constants.SOS_ADVERTISE_TIMEOUT_MS) {
+
         if (!PermissionHelper.hasBluetoothAdvertisePermission(context)) {
-            recordFailure("Missing BLUETOOTH_ADVERTISE permission")
+            val msg = "Missing BLUETOOTH_ADVERTISE permission"
+            BleDiagnosticsTracker.recordEvent("NARI_BLE_ADVERTISE_FAILURE", msg, isError = true)
+            Log.w(TAG, msg)
             return
         }
 
         val adapter = bluetoothAdapter
-
         if (adapter == null || !adapter.isEnabled) {
-            recordFailure("Bluetooth is disabled or unavailable")
+            val msg = "Bluetooth is disabled or unavailable"
+            BleDiagnosticsTracker.recordEvent("NARI_BLE_ADVERTISE_FAILURE", msg, isError = true)
+            Log.w(TAG, msg)
             return
         }
 
+        // Priority guard — SOS > ACK on single-session chipsets.
         synchronized(stateLock) {
             val occupying = currentPacket ?: packetBeingStarted
-
             if (occupying?.isSos == true && packet.isAck) {
+                Log.w(
+                    TAG,
+                    "ACK deferred: active SOS has priority " +
+                            "(queued=${pendingAcks.size + 1}, target=#${packet.targetSenderId})"
+                )
                 pendingAcks.addLast(packet)
-
                 BleDiagnosticsTracker.recordEvent(
                     "NARI_BLE_ACK_DEFERRED",
-                    "ACK deferred behind active SOS #${occupying.senderId}"
+                    "ACK for #${packet.targetSenderId} deferred behind active SOS #${occupying.senderId}"
                 )
                 return
             }
         }
 
+        // Slot swap. flushPendingAcks=false — warna recursion ho jayega.
         stopAdvertisingInternal(flushPendingAcks = false)
 
-        advertiser = adapter.bluetoothLeAdvertiser
+        lastPacket = packet
+        synchronized(stateLock) { packetBeingStarted = packet }
+        fallbackAttempted = false
 
+        advertiser = adapter.bluetoothLeAdvertiser
         if (advertiser == null) {
-            recordFailure("BLE advertising is not supported")
-            finishFailure(packet)
+            val msg = "BLE Advertising not supported on this device chipset"
+            BleDiagnosticsTracker.recordEvent("NARI_BLE_ADVERTISE_FAILURE", msg, isError = true)
+            Log.e(TAG, msg)
+            synchronized(stateLock) {
+                packetBeingStarted = null
+                currentPacket = null
+            }
+            // SOS slot free hua → queued ACK ko chance do
+            if (packet.isSos) drainPendingAcks()
             return
         }
 
         val encodedPacket = PacketCodec.encode(packet)
+        val payloadPair = buildAdvertisePayloads(encodedPacket)
 
-        if (encodedPacket == null) {
-            recordFailure("Packet encoding failed: packet exceeds allowed size")
-            finishFailure(packet)
+        if (payloadPair == null) {
+            val msg = "Encoded packet (${encodedPacket.size} bytes) does not fit in " +
+                    "legacy BLE advertising (${MAX_LEGACY_ADV_PAYLOAD} byte limit)"
+            BleDiagnosticsTracker.recordEvent(
+                "NARI_BLE_ADVERTISE_FAILURE", msg, isError = true
+            )
+            Log.e(TAG, msg)
+            synchronized(stateLock) {
+                packetBeingStarted = null
+                currentPacket = null
+            }
+            if (packet.isSos) drainPendingAcks()
             return
         }
 
-        val serviceStructureSize = calculateAdStructureSize(
-            Constants.SOS_PARCEL_UUID,
-            encodedPacket,
-            AD_TYPE_SERVICE_DATA_16_BIT
+        val (data, scanResponse) = payloadPair
+
+        val logTag = if (packet.isAck) "NARI_BLE_ACK_SENT" else "NARI_BLE_ADVERTISE_START"
+        BleDiagnosticsTracker.recordEvent(
+            logTag,
+            "Broadcasting packet: senderId=#${packet.senderId}, ack=${packet.isAck}, " +
+                    "test=${packet.isTest}, target=#${packet.targetSenderId}, " +
+                    "bytes=${encodedPacket.size}, scanResp=${scanResponse != null}"
         )
 
-        val manufacturerStructureSize = calculateAdStructureSize(
-            null,
-            encodedPacket,
-            AD_TYPE_MANUFACTURER_DATA
-        )
-
-        val mainSize = FLAGS_AD_STRUCTURE_SIZE + serviceStructureSize
-
-        recordSize(
-            tier = TIER_FULL,
-            packetSize = encodedPacket.size,
-            mainSize = mainSize,
-            scanResponseSize = manufacturerStructureSize
-        )
-
-        if (
-            mainSize > LEGACY_ADVERTISING_LIMIT ||
-            manufacturerStructureSize > LEGACY_ADVERTISING_LIMIT
-        ) {
-            BleDiagnosticsTracker.recordEvent(
-                "NARI_BLE_SIZE_OVERFLOW",
-                "Legacy advertising capacity exceeded; packet=${encodedPacket.size}, " +
-                    "main=$mainSize, scanResponse=$manufacturerStructureSize"
-            )
-        }
-
-        lastPacket = packet
-        synchronized(stateLock) {
-            packetBeingStarted = packet
-        }
-
-        fallbackTier = TIER_FULL
-
-        val data = makeServiceData(encodedPacket)
-        val scanResponse = makeManufacturerData(encodedPacket)
+        val settings = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+            .setConnectable(false)
+            .setTimeout(0)
+            .build()
 
         try {
-            if (
-                mainSize <= LEGACY_ADVERTISING_LIMIT &&
-                manufacturerStructureSize <= LEGACY_ADVERTISING_LIMIT
-            ) {
-                advertiser?.startAdvertising(
-                    makeSettings(),
-                    data,
-                    scanResponse,
-                    callback
-                )
+            if (scanResponse != null) {
+                advertiser?.startAdvertising(settings, data, scanResponse, callback)
             } else {
-                startNextTier(packet)
+                advertiser?.startAdvertising(settings, data, callback)
             }
+            Log.i(
+                TAG,
+                "Initiated BLE advertising for packet: $packet (${encodedPacket.size} bytes, " +
+                        "scanResponse=${scanResponse != null})"
+            )
 
             timeoutJob?.cancel()
             timeoutJob = externalScope.launch {
                 delay(timeoutMs)
                 BleDiagnosticsTracker.recordEvent(
                     "NARI_BLE_ADVERTISE_START",
-                    "Advertising timeout reached; stopping"
+                    "Advertising timeout (${timeoutMs / 1000}s) reached. Stopping."
                 )
                 stopAdvertising()
             }
         } catch (e: Exception) {
-            recordFailure("Exception starting advertising: ${e.message}")
-            startNextTier(packet)
+            BleDiagnosticsTracker.recordEvent(
+                "NARI_BLE_ADVERTISE_FAILURE", "Exception: ${e.message}", isError = true
+            )
+            Log.e(TAG, "Exception starting BLE advertisement", e)
+            synchronized(stateLock) {
+                currentPacket = null
+                packetBeingStarted = null
+            }
+            if (packet.isSos) drainPendingAcks()
         }
     }
 
     // ---------------------------------------------------------------------
-    // Multi-tier fallback
+    // Payload building + size validation
     // ---------------------------------------------------------------------
 
+    /**
+     * Builds the (main, scanResponse) AdvertiseData pair that fits within the
+     * 31-byte legacy BLE advertising limit.
+     *
+     * Tiers (first that fits wins):
+     *  1. Service data (main) + manufacturer data (scan response)
+     *  2. Service data only (main)
+     *  3. Manufacturer data only (main)
+     *
+     * Returns null if even the minimal payload exceeds the limit.
+     */
+    private fun buildAdvertisePayloads(
+        encoded: ByteArray
+    ): Pair<AdvertiseData, AdvertiseData?>? {
+        val uuid = Constants.SOS_PARCEL_UUID
+        val sdOverhead = serviceDataOverhead(uuid)
+        val mfgOverhead = AD_MANUFACTURER_DATA_OVERHEAD
+
+        val mainSdSize = AD_FLAGS_SIZE + sdOverhead + encoded.size
+        val mainMfgSize = AD_FLAGS_SIZE + mfgOverhead + encoded.size
+        val scanRespMfgSize = AD_FLAGS_SIZE + mfgOverhead + encoded.size
+
+        // Tier 1: Service data (main) + manufacturer data (scan response)
+        if (mainSdSize <= MAX_LEGACY_ADV_PAYLOAD &&
+            scanRespMfgSize <= MAX_LEGACY_ADV_PAYLOAD
+        ) {
+            val data = AdvertiseData.Builder()
+                .addServiceData(uuid, encoded)
+                .setIncludeDeviceName(false)
+                .setIncludeTxPowerLevel(false)
+                .build()
+            val scanResponse = AdvertiseData.Builder()
+                .addManufacturerData(Constants.MANUFACTURER_ID, encoded)
+                .setIncludeDeviceName(false)
+                .build()
+            return data to scanResponse
+        }
+
+        // Tier 2: Service data only (main)
+        if (mainSdSize <= MAX_LEGACY_ADV_PAYLOAD) {
+            val data = AdvertiseData.Builder()
+                .addServiceData(uuid, encoded)
+                .setIncludeDeviceName(false)
+                .setIncludeTxPowerLevel(false)
+                .build()
+            return data to null
+        }
+
+        // Tier 3: Manufacturer data only (main)
+        if (mainMfgSize <= MAX_LEGACY_ADV_PAYLOAD) {
+            val data = AdvertiseData.Builder()
+                .addManufacturerData(Constants.MANUFACTURER_ID, encoded)
+                .setIncludeDeviceName(false)
+                .setIncludeTxPowerLevel(false)
+                .build()
+            return data to null
+        }
+
+        return null
+    }
+
+    /**
+     * AD structure overhead for a Service Data field, in bytes.
+     * Layout: length(1) + type(1) + UUID(2 or 16) = 4 or 18.
+     */
+    private fun serviceDataOverhead(uuid: ParcelUuid): Int =
+        if (isShortUuid(uuid.uuid)) AD_SERVICE_DATA_16BIT_OVERHEAD
+        else AD_SERVICE_DATA_128BIT_OVERHEAD
+
+    /**
+     * A "short" (16-bit) Bluetooth UUID is always of the form
+     * 0000XXXX-0000-1000-8000-00805F9B34FB.
+     */
+    private fun isShortUuid(uuid: UUID): Boolean {
+        val s = uuid.toString().lowercase()
+        return s.length == 36 &&
+                s.startsWith("0000") &&
+                s.endsWith("0000-1000-8000-00805f9b34fb")
+    }
+
+    // ---------------------------------------------------------------------
+    // Fallback
+    // ---------------------------------------------------------------------
     @SuppressLint("MissingPermission")
-    private fun startNextTier(packet: SosPacket) {
+    private fun attemptMinimalFallback(packet: SosPacket) {
         val adv = advertiser
-
         if (adv == null) {
-            finishFailure(packet)
+            BleDiagnosticsTracker.recordEvent(
+                "NARI_BLE_ADVERTISE_FAILURE",
+                "Fallback skipped: advertiser unavailable",
+                isError = true
+            )
+            synchronized(stateLock) {
+                packetBeingStarted = null
+                currentPacket = null
+            }
+            if (packet.isSos) drainPendingAcks()
             return
         }
 
-        val encoded = PacketCodec.encode(packet)
+        val encodedPacket = PacketCodec.encode(packet)
+        val uuid = Constants.SOS_PARCEL_UUID
+        val sdOverhead = serviceDataOverhead(uuid)
+        val required = AD_FLAGS_SIZE + sdOverhead + encodedPacket.size
 
-        if (encoded == null) {
-            finishFailure(packet)
+        if (required > MAX_LEGACY_ADV_PAYLOAD) {
+            BleDiagnosticsTracker.recordEvent(
+                "NARI_BLE_ADVERTISE_FAILURE",
+                "Fallback skipped: packet too large even for service-data-only " +
+                        "(need ${required}B, limit ${MAX_LEGACY_ADV_PAYLOAD}B)",
+                isError = true
+            )
+            Log.e(TAG, "Cannot advertise ${encodedPacket.size}B packet — exceeds legacy limit")
+            synchronized(stateLock) {
+                packetBeingStarted = null
+                currentPacket = null
+            }
+            if (packet.isSos) drainPendingAcks()
             return
         }
-
-        // Each retry advances to the next tier.
-        fallbackTier++
 
         try {
-            when (fallbackTier) {
-                TIER_SERVICE_ONLY -> {
-                    val structureSize = calculateAdStructureSize(
-                        Constants.SOS_PARCEL_UUID,
-                        encoded,
-                        AD_TYPE_SERVICE_DATA_16_BIT
-                    )
-                    val mainSize = FLAGS_AD_STRUCTURE_SIZE + structureSize
+            val settings = AdvertiseSettings.Builder()
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+                .setConnectable(false)
+                .build()
 
-                    recordSize(TIER_SERVICE_ONLY, encoded.size, mainSize)
+            val data = AdvertiseData.Builder()
+                .addServiceData(uuid, encodedPacket)
+                .setIncludeDeviceName(false)
+                .setIncludeTxPowerLevel(false)
+                .build()
 
-                    BleDiagnosticsTracker.recordEvent(
-                        "NARI_BLE_FALLBACK_TIER_1",
-                        "Retrying with Service Data only"
-                    )
-
-                    if (mainSize > LEGACY_ADVERTISING_LIMIT) {
-                        startNextTier(packet)
-                        return
-                    }
-
-                    synchronized(stateLock) {
-                        packetBeingStarted = packet
-                    }
-
-                    adv.startAdvertising(
-                        makeSettings(),
-                        makeServiceData(encoded),
-                        callback
-                    )
-                }
-
-                TIER_MANUFACTURER_ONLY -> {
-                    val structureSize = calculateAdStructureSize(
-                        null,
-                        encoded,
-                        AD_TYPE_MANUFACTURER_DATA
-                    )
-                    val mainSize = FLAGS_AD_STRUCTURE_SIZE + structureSize
-
-                    recordSize(TIER_MANUFACTURER_ONLY, encoded.size, mainSize)
-
-                    BleDiagnosticsTracker.recordEvent(
-                        "NARI_BLE_FALLBACK_TIER_2",
-                        "Retrying with Manufacturer Data only"
-                    )
-
-                    if (mainSize > LEGACY_ADVERTISING_LIMIT) {
-                        startNextTier(packet)
-                        return
-                    }
-
-                    synchronized(stateLock) {
-                        packetBeingStarted = packet
-                    }
-
-                    adv.startAdvertising(
-                        makeSettings(),
-                        makeManufacturerData(encoded),
-                        callback
-                    )
-                }
-
-                TIER_MINIMAL -> {
-                    // Use the codec's legacy 15-byte representation.
-                    val minimal = PacketCodec.encode(
-                        packet,
-                        PacketCodec.LEGACY_PACKET_SIZE_BYTES
-                    )
-
-                    if (minimal == null) {
-                        startNextTier(packet)
-                        return
-                    }
-
-                    val structureSize = calculateAdStructureSize(
-                        Constants.SOS_PARCEL_UUID,
-                        minimal,
-                        AD_TYPE_SERVICE_DATA_16_BIT
-                    )
-                    val mainSize = FLAGS_AD_STRUCTURE_SIZE + structureSize
-
-                    recordSize(TIER_MINIMAL, minimal.size, mainSize)
-
-                    BleDiagnosticsTracker.recordEvent(
-                        "NARI_BLE_FALLBACK_TIER_3",
-                        "Retrying with legacy 15-byte packet"
-                    )
-
-                    if (mainSize > LEGACY_ADVERTISING_LIMIT) {
-                        startNextTier(packet)
-                        return
-                    }
-
-                    synchronized(stateLock) {
-                        packetBeingStarted = packet
-                    }
-
-                    adv.startAdvertising(
-                        makeSettings(),
-                        makeServiceData(minimal),
-                        callback
-                    )
-                }
-
-                TIER_EXTENDED -> {
-                    if (
-                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                        bluetoothAdapter?.isLeExtendedAdvertisingSupported == true
-                    ) {
-                        startExtendedAdvertising(packet, encoded)
-                    } else {
-                        recordFailure(
-                            "Extended advertising unsupported; all legacy tiers failed"
-                        )
-                        finishFailure(packet)
-                    }
-                }
-
-                else -> finishFailure(packet)
-            }
+            adv.startAdvertising(settings, data, callback)
         } catch (e: Exception) {
-            recordFailure(
-                "Fallback tier $fallbackTier failed: ${e.message}"
+            BleDiagnosticsTracker.recordEvent(
+                "NARI_BLE_ADVERTISE_FAILURE",
+                "Minimal fallback failed: ${e.message}",
+                isError = true
             )
-            startNextTier(packet)
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun startExtendedAdvertising(
-        packet: SosPacket,
-        encoded: ByteArray
-    ) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            finishFailure(packet)
-            return
-        }
-
-        val adapter = bluetoothAdapter
-        val adv = advertiser
-
-        if (
-            adapter?.isLeExtendedAdvertisingSupported != true ||
-            adv == null
-        ) {
-            finishFailure(packet)
-            return
-        }
-
-        val maximumLength = adapter.leMaximumAdvertisingDataLength
-
-        if (encoded.size > maximumLength) {
-            recordFailure(
-                "Extended payload too large: ${encoded.size}/$maximumLength bytes"
-            )
-            finishFailure(packet)
-            return
-        }
-
-        val parameters = AdvertisingSetParameters.Builder()
-            .setLegacyMode(false)
-            .setConnectable(false)
-            .setScannable(false)
-            .setInterval(AdvertisingSetParameters.INTERVAL_LOW)
-            .setTxPowerLevel(AdvertisingSetParameters.TX_POWER_HIGH)
-            .build()
-
-        synchronized(stateLock) {
-            packetBeingStarted = packet
-        }
-
-        BleDiagnosticsTracker.recordEvent(
-            "NARI_BLE_EXTENDED_ADV_START",
-            "Starting extended advertising: packet=${encoded.size}, capacity=$maximumLength"
-        )
-
-        adv.startAdvertisingSet(
-            parameters,
-            makeExtendedData(encoded),
-            null,
-            null,
-            null,
-            extendedCallback
-        )
-    }
-
-    private fun finishFailure(packet: SosPacket) {
-        synchronized(stateLock) {
-            if (packetBeingStarted == packet) packetBeingStarted = null
-            if (currentPacket == packet) currentPacket = null
-        }
-
-        isAdvertising = false
-        BleDiagnosticsTracker.setAdvertising(false)
-
-        recordFailure(
-            "All advertising tiers failed for sender #${packet.senderId}"
-        )
-
-        if (packet.isSos) {
-            drainPendingAcks()
+            synchronized(stateLock) {
+                packetBeingStarted = null
+                currentPacket = null
+            }
+            if (packet.isSos) drainPendingAcks()
         }
     }
 
     // ---------------------------------------------------------------------
-    // Stop advertising
+    // Stop
     // ---------------------------------------------------------------------
-
     @SuppressLint("MissingPermission")
     fun stopAdvertising() {
         stopAdvertisingInternal(flushPendingAcks = true)
@@ -641,26 +442,24 @@ class BleAdvertiser(
         timeoutJob?.cancel()
         timeoutJob = null
 
-        val wasSos: Boolean
-
+        var wasSos = false
         synchronized(stateLock) {
             wasSos = (currentPacket ?: packetBeingStarted)?.isSos == true
             currentPacket = null
             packetBeingStarted = null
         }
 
-        try {
-            if (activeExtendedAdvertising && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                advertiser?.stopAdvertisingSet(extendedCallback)
-                extendedSet = null
-                activeExtendedAdvertising = false
-            } else if (isAdvertising || fallbackTier > 0) {
+        if (isAdvertising && advertiser != null) {
+            try {
                 advertiser?.stopAdvertising(callback)
+                BleDiagnosticsTracker.recordEvent(
+                    "NARI_BLE_ADVERTISE_START", "BLE SOS Advertising stopped"
+                )
+                Log.i(TAG, "BLE SOS Advertising stopped")
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception stopping BLE advertisement", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception stopping BLE advertising", e)
         }
-
         isAdvertising = false
         BleDiagnosticsTracker.setAdvertising(false)
 
@@ -670,24 +469,39 @@ class BleAdvertiser(
     }
 
     // ---------------------------------------------------------------------
-    // Deferred ACK handling
+    // Queue drain
     // ---------------------------------------------------------------------
-
     private fun drainPendingAcks() {
-        val next = synchronized(stateLock) {
+        val next: SosPacket? = synchronized(stateLock) {
             pendingAcks.removeFirstOrNull()
         } ?: return
 
-        Log.i(
-            TAG,
-            "Draining deferred ACK for #${next.targetSenderId}"
-        )
-
+        Log.i(TAG, "Draining deferred ACK for #${next.targetSenderId} (remaining=${pendingAcks.size})")
         BleDiagnosticsTracker.recordEvent(
             "NARI_BLE_ACK_DRAINED",
             "Flushing deferred ACK for #${next.targetSenderId}"
         )
-
+        // Recursion safe: startAdvertising → stopAdvertisingInternal(false) →
+        // guard passes (slot empty) → advertiser actually starts.
         startAdvertising(next)
+    }
+
+    companion object {
+        private const val TAG = "BleAdvertiser"
+
+        /** Legacy BLE advertising PDU hard limit. */
+        private const val MAX_LEGACY_ADV_PAYLOAD = 31
+
+        /** Flags AD structure: length(1) + type(1) + flags(1). */
+        private const val AD_FLAGS_SIZE = 3
+
+        /** Service Data with 16-bit UUID: length(1) + type(1) + uuid(2). */
+        private const val AD_SERVICE_DATA_16BIT_OVERHEAD = 4
+
+        /** Service Data with 128-bit UUID: length(1) + type(1) + uuid(16). */
+        private const val AD_SERVICE_DATA_128BIT_OVERHEAD = 18
+
+        /** Manufacturer Data: length(1) + type(1) + mfgId(2). */
+        private const val AD_MANUFACTURER_DATA_OVERHEAD = 4
     }
 }
